@@ -9,6 +9,9 @@ import {
   Switch,
   Platform,
   StatusBar,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSettingsStore } from '../../stores/useSettingsStore';
@@ -81,12 +84,15 @@ export default function DeckSelectScreen() {
   const toggleDarkMode = useSettingsStore((s) => s.toggleDarkMode);
   const aiProvider = useSettingsStore((s) => s.aiProvider);
   const setAIProvider = useSettingsStore((s) => s.setAIProvider);
+  const deckInstructions = useSettingsStore((s) => s.deckInstructions);
+  const setDeckInstructions = useSettingsStore((s) => s.setDeckInstructions);
 
   const [decks, setDecks] = useState<DeckInfo[]>([]);
   const [loadingState, setLoadingState] = useState<LoadingState>('loading');
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [trialStatus, setTrialStatus] = useState<TrialStatus | null>(null);
+  const [instructionsModal, setInstructionsModal] = useState<{ deckName: string; text: string } | null>(null);
 
   const t = darkMode ? darkTheme : lightTheme;
 
@@ -424,7 +430,18 @@ export default function DeckSelectScreen() {
           <View style={{ height: 1, backgroundColor: t.border, marginHorizontal: 20 }} />
         )}
         renderItem={({ item }) => (
-          <DeckRow deck={item} onPress={() => handleSelectDeck(item.deckName)} theme={t} />
+          <DeckRow
+            deck={item}
+            onPress={() => handleSelectDeck(item.deckName)}
+            onLongPress={() =>
+              setInstructionsModal({
+                deckName: item.deckName,
+                text: deckInstructions[item.deckName] || '',
+              })
+            }
+            hasInstructions={!!deckInstructions[item.deckName]}
+            theme={t}
+          />
         )}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', paddingVertical: 32 }}>
@@ -432,6 +449,105 @@ export default function DeckSelectScreen() {
           </View>
         }
       />
+
+      {/* Hint text */}
+      <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
+        <Text style={{ fontSize: 11, color: t.textDimmed, textAlign: 'center' }}>
+          Long press a deck to customize tutor instructions
+        </Text>
+      </View>
+
+      {/* Custom instructions modal */}
+      {instructionsModal && (
+        <Modal
+          visible
+          transparent
+          animationType="slide"
+          onRequestClose={() => setInstructionsModal(null)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1, justifyContent: 'flex-end' }}
+          >
+            <Pressable
+              style={{ flex: 1 }}
+              onPress={() => setInstructionsModal(null)}
+            />
+            <View
+              style={{
+                backgroundColor: t.surface,
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                paddingHorizontal: 20,
+                paddingTop: 20,
+                paddingBottom: 32,
+                borderTopWidth: 1,
+                borderColor: t.border,
+              }}
+            >
+              <Text style={{ fontSize: 17, fontWeight: '700', color: t.text, marginBottom: 4 }}>
+                Tutor Instructions
+              </Text>
+              <Text style={{ fontSize: 13, color: t.textSecondary, marginBottom: 16 }}>
+                {instructionsModal.deckName}
+              </Text>
+              <TextInput
+                style={{
+                  backgroundColor: t.bg,
+                  color: t.text,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: t.border,
+                  padding: 14,
+                  fontSize: 14,
+                  minHeight: 120,
+                  textAlignVertical: 'top',
+                }}
+                multiline
+                placeholder="E.g.: The back has a Core Answer and a Conceptual Answer. Only test me on the Core Answer, but read aloud the Conceptual Answer after each card."
+                placeholderTextColor={t.textDimmed}
+                value={instructionsModal.text}
+                onChangeText={(text) =>
+                  setInstructionsModal((prev) => prev && { ...prev, text })
+                }
+                autoFocus
+              />
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+                <Pressable
+                  onPress={() => setInstructionsModal(null)}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: t.border,
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: t.textSecondary, fontWeight: '600', fontSize: 14 }}>
+                    Cancel
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setDeckInstructions(instructionsModal.deckName, instructionsModal.text);
+                    setInstructionsModal(null);
+                  }}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    backgroundColor: t.accent,
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Save</Text>
+                </Pressable>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -442,15 +558,20 @@ export default function DeckSelectScreen() {
 function DeckRow({
   deck,
   onPress,
+  onLongPress,
+  hasInstructions,
   theme: t,
 }: {
   deck: DeckInfo;
   onPress: () => void;
+  onLongPress: () => void;
+  hasInstructions: boolean;
   theme: Theme;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       style={({ pressed }) => ({
         paddingVertical: 14,
         paddingHorizontal: 20,
@@ -459,12 +580,24 @@ function DeckRow({
         backgroundColor: pressed ? t.pressHighlight : 'transparent',
       })}
     >
-      <Text
-        style={{ flex: 1, fontSize: 16, fontWeight: '700', color: t.text }}
-        numberOfLines={1}
-      >
-        {deck.deckName}
-      </Text>
+      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Text
+          style={{ flexShrink: 1, fontSize: 16, fontWeight: '700', color: t.text }}
+          numberOfLines={1}
+        >
+          {deck.deckName}
+        </Text>
+        {hasInstructions && (
+          <View
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              backgroundColor: t.accent,
+            }}
+          />
+        )}
+      </View>
       <View style={{ flexDirection: 'row', marginLeft: 12 }}>
         <Text
           style={{

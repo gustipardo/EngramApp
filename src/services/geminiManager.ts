@@ -21,6 +21,11 @@ class GeminiManager {
   private isReconnecting = false;
   private isInitialConnect = false;
 
+  // Audio stats tracking (for level meter + debugging)
+  private audioBytesSent = 0;
+  private audioPacketsSent = 0;
+  private audioChunksReceived = 0;
+
   onConnectionDropped: (() => void) | null = null;
 
   // -------------------------------------------------------------------------
@@ -183,7 +188,18 @@ class GeminiManager {
     this.audioDataSubscription = ExpoForegroundAudioModule.addListener(
       'onAudioData',
       (event: { data: string }) => {
+        this.audioChunksReceived++;
+        // Log every 100th chunk (~every 10s) to verify events are arriving
+        if (this.audioChunksReceived % 100 === 1) {
+          console.log(
+            `[Gemini] Audio chunk #${this.audioChunksReceived}, len=${event.data?.length ?? 0}, ` +
+            `muted=${this.isMuted}, ws=${this.ws?.readyState}, setup=${this.isSetupDone}`,
+          );
+        }
         if (!this.isMuted && this.ws && this.ws.readyState === WebSocket.OPEN && this.isSetupDone) {
+          const dataLen = event.data?.length ?? 0;
+          this.audioBytesSent += dataLen;
+          this.audioPacketsSent += 1;
           this.ws.send(
             JSON.stringify({
               realtimeInput: {
@@ -213,12 +229,18 @@ class GeminiManager {
   private async handleMessage(rawData: string | object): Promise<void> {
     let msg: any;
     try {
-      const text =
-        typeof rawData === 'string'
-          ? rawData
-          : rawData instanceof Blob
-            ? await (rawData as Blob).text()
-            : JSON.stringify(rawData);
+      let text: string;
+      if (typeof rawData === 'string') {
+        text = rawData;
+      } else if (typeof (rawData as any)?.text === 'function') {
+        // Blob or Blob-like (duck-typed — instanceof Blob can fail in RN polyfills)
+        text = await (rawData as any).text();
+      } else if (rawData instanceof ArrayBuffer) {
+        text = new TextDecoder().decode(rawData);
+      } else {
+        console.warn('[Gemini] Unexpected message type:', typeof rawData, Object.prototype.toString.call(rawData));
+        text = JSON.stringify(rawData);
+      }
       msg = JSON.parse(text);
     } catch (e) {
       console.error('[Gemini] Failed to parse message:', e);
@@ -591,7 +613,10 @@ class GeminiManager {
   }
 
   async getAudioStats(): Promise<{ bytesSent: number; packetsSent: number } | null> {
-    return null; // Not applicable for WebSocket-based streaming
+    return {
+      bytesSent: this.audioBytesSent,
+      packetsSent: this.audioPacketsSent,
+    };
   }
 
   async debugAudioTrackState(label: string): Promise<void> {
@@ -619,6 +644,9 @@ class GeminiManager {
     }
 
     this.isSetupDone = false;
+    this.audioBytesSent = 0;
+    this.audioPacketsSent = 0;
+    this.audioChunksReceived = 0;
   }
 
   private cleanup(): void {

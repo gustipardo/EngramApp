@@ -2,7 +2,7 @@
  * AI Tutor System Prompt and Tool Configuration
  */
 
-export function getSystemPrompt(deckName: string, cardCount: number, alwaysReadBack: boolean): string {
+export function getSystemPrompt(deckName: string, cardCount: number, alwaysReadBack: boolean, customInstructions?: string): string {
   const timeOfDay = new Date().getHours() < 12 ? 'morning' : 'afternoon';
 
   const alwaysReadBackRule = alwaysReadBack
@@ -69,6 +69,9 @@ ${alwaysReadBackRule}
    - Do NOT "clarify" the question by adding details that come from the answer.
    - Example VIOLATION: Front="Which AWS service is cheaper than Secrets Manager but has a downside?" Back="Parameter Store but doesn't have rotation" → AI says "Which service, like Parameter Store, is cheaper?" — This REVEALS the answer! WRONG!
    - Correct behavior: rephrase the front naturally without adding any back content. If the front is vague, ask it as-is.
+${customInstructions ? `
+11. CUSTOM DECK INSTRUCTIONS (from the user — follow these as closely as possible):
+${customInstructions}` : ''}
 `.trim();
 }
 

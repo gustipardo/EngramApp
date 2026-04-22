@@ -11,12 +11,14 @@ export interface SettingsStore {
   alwaysReadBack: boolean;
   darkMode: boolean;
   aiProvider: AIProvider;
+  deckInstructions: Record<string, string>;
   setSelectedDeck: (deck: string | null) => void;
   setOnboardingCompleted: (completed: boolean) => void;
   setApiKeyStored: (stored: boolean) => void;
   setAlwaysReadBack: (value: boolean) => void;
   toggleDarkMode: () => void;
   setAIProvider: (provider: AIProvider) => void;
+  setDeckInstructions: (deckName: string, instructions: string) => void;
 }
 
 export const useSettingsStore = create(
@@ -28,6 +30,7 @@ export const useSettingsStore = create(
       alwaysReadBack: false,
       darkMode: true,
       aiProvider: 'openai',
+      deckInstructions: {},
 
       setSelectedDeck: (selectedDeck) => set({ selectedDeck }),
       setOnboardingCompleted: (onboardingCompleted) => set({ onboardingCompleted }),
@@ -35,6 +38,17 @@ export const useSettingsStore = create(
       setAlwaysReadBack: (alwaysReadBack) => set({ alwaysReadBack }),
       toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
       setAIProvider: (aiProvider) => set({ aiProvider }),
+      setDeckInstructions: (deckName, instructions) =>
+        set((state) => ({
+          deckInstructions: {
+            ...state.deckInstructions,
+            ...(instructions.trim()
+              ? { [deckName]: instructions.trim() }
+              : Object.fromEntries(
+                  Object.entries(state.deckInstructions).filter(([k]) => k !== deckName)
+                )),
+          },
+        })),
     }),
     {
       name: 'settings-storage',

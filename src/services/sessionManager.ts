@@ -120,8 +120,9 @@ class SessionManager {
    * Waits for the server to acknowledge the update before resolving.
    */
   private async configureAISession(deckName: string, cardCount: number): Promise<void> {
-    const { alwaysReadBack } = useSettingsStore.getState();
-    const systemPrompt = getSystemPrompt(deckName, cardCount, alwaysReadBack);
+    const { alwaysReadBack, deckInstructions } = useSettingsStore.getState();
+    const customInstructions = deckInstructions[deckName] || undefined;
+    const systemPrompt = getSystemPrompt(deckName, cardCount, alwaysReadBack, customInstructions);
 
     await webrtcManager.updateSession({
       instructions: systemPrompt,
