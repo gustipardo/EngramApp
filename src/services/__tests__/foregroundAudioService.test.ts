@@ -1,3 +1,14 @@
+// Mock react-native BEFORE the production module loads — Jest's default
+// transform can't parse RN's Flow syntax (`import typeof …`), so the suite
+// would otherwise fail to load before any test runs.
+jest.mock('react-native', () => ({
+  __esModule: true,
+  AppState: {
+    currentState: 'active',
+    addEventListener: jest.fn().mockReturnValue({ remove: jest.fn() }),
+  },
+}));
+
 import {
   startForegroundService,
   stopForegroundService,
@@ -16,6 +27,7 @@ const mockIsServiceRunning = jest.fn().mockReturnValue(false);
 const mockAddListener = jest.fn();
 const mockRequestAudioFocus = jest.fn().mockResolvedValue(undefined);
 const mockAbandonAudioFocus = jest.fn().mockResolvedValue(undefined);
+const mockTriggerHeadsUp = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('expo-foreground-audio', () => ({
   __esModule: true,
@@ -27,6 +39,7 @@ jest.mock('expo-foreground-audio', () => ({
     addListener: (...args: any[]) => mockAddListener(...args),
     requestAudioFocus: (...args: any[]) => mockRequestAudioFocus(...args),
     abandonAudioFocus: (...args: any[]) => mockAbandonAudioFocus(...args),
+    triggerHeadsUp: (...args: any[]) => mockTriggerHeadsUp(...args),
   },
 }));
 
