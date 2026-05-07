@@ -41,3 +41,13 @@ yarn-error.*
 /ios
 /android
 **/android/build/
+
+# IDE
+.idea/
+
+# Auto-generated docs (regen, not source of truth)
+docs/
+
+# BMAD planning artifacts (frozen, archived in tree but no longer tracked)
+_bmad/
+_bmad-output/
