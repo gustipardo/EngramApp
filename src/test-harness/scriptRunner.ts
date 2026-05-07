@@ -18,7 +18,7 @@ export interface RunContext {
   mockMgr: MockGeminiManager;
   /** The deck simulator the cardLoader mocks delegate to. */
   simulator: DeckSimulator;
-  /** Spy on `ankiBridge.answerCard(cardId, pass, timeTakenMs?)`. */
+  /** Spy on `ankiBridge.answerCard(deckName, noteId, cardOrd, pass, timeTakenMs?)`. */
   answerCardSpy: jest.Mock;
   /** sessionManager singleton. */
   sessionManager: any;
@@ -136,7 +136,8 @@ export async function runFixture(fixture: Fixture, ctx: RunContext): Promise<Run
 function collectAnkiWrites(
   spy: jest.Mock
 ): Array<{ cardId: number; pass: boolean }> {
-  return spy.mock.calls.map(([cardId, pass]) => ({ cardId, pass }));
+  // ankiBridge.answerCard signature: (deckName, noteId, cardOrd, pass, timeTakenMs?)
+  return spy.mock.calls.map(([, cardId, , pass]) => ({ cardId, pass }));
 }
 
 function flushMicrotasks(): Promise<void> {
