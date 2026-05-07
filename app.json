@@ -46,14 +46,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store",
       "expo-router",
-      [
-        "@config-plugins/react-native-webrtc",
-        {
-          "cameraPermission": false
-        }
-      ],
       "./modules/expo-foreground-audio/withForegroundAudioService",
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
