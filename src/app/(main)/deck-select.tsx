@@ -21,9 +21,11 @@ import { checkTrialStatus, type TrialStatus } from '../../services/trialService'
 import { signOut } from '../../services/authService';
 import { AnalyticsEvents } from '../../services/analytics';
 import type { DeckInfo } from '../../types/anki';
+import { palette } from '../../theme/colors';
+import { EngramWordmark } from '../../components/EngramWordmark';
 
 // ---------------------------------------------------------------------------
-// Theme
+// Theme — Engram tokens (see src/theme/colors.ts)
 // ---------------------------------------------------------------------------
 interface Theme {
   bg: string;
@@ -31,46 +33,67 @@ interface Theme {
   text: string;
   textSecondary: string;
   textDimmed: string;
+  textOnAccent: string;
   border: string;
   accent: string;
+  success: string;
+  error: string;
   pressHighlight: string;
   switchTrackOff: string;
   switchTrackOn: string;
   switchThumbOff: string;
   switchThumbOn: string;
+  errorCircleBg: string;
+  warnCircleBg: string;
+  trialBannerBg: string;
+  trialBannerText: string;
   statusBar: 'light-content' | 'dark-content';
 }
 
 const darkTheme: Theme = {
-  bg: '#121212',
-  surface: '#1e1e1e',
-  text: '#ffffff',
-  textSecondary: '#9ca3af',
-  textDimmed: '#4b5563',
-  border: '#2a2a2a',
-  accent: '#3b82f6',
-  pressHighlight: '#2a2a2a',
-  switchTrackOff: '#4b5563',
-  switchTrackOn: '#2563eb',
-  switchThumbOff: '#9ca3af',
-  switchThumbOn: '#93c5fd',
-  statusBar: 'light-content',
+  bg:             palette.navy[900],
+  surface:        palette.navy[850],
+  text:           palette.navy[50],
+  textSecondary:  palette.navy[200],
+  textDimmed:     palette.navy[400],
+  textOnAccent:   palette.navy[900],
+  border:         palette.navy[700],
+  accent:         palette.amber[500],
+  success:        palette.sage[500],
+  error:          palette.terracota[500],
+  pressHighlight: palette.navy[700],
+  switchTrackOff: palette.navy[400],
+  switchTrackOn:  palette.amber[700],
+  switchThumbOff: palette.navy[200],
+  switchThumbOn:  palette.amber[300],
+  errorCircleBg:  'rgba(198, 123, 92, 0.18)',
+  warnCircleBg:   'rgba(228, 161, 63, 0.18)',
+  trialBannerBg:  'rgba(228, 161, 63, 0.12)',
+  trialBannerText: palette.amber[300],
+  statusBar:      'light-content',
 };
 
 const lightTheme: Theme = {
-  bg: '#f9fafb',
-  surface: '#ffffff',
-  text: '#111827',
-  textSecondary: '#6b7280',
-  textDimmed: '#d1d5db',
-  border: '#e5e7eb',
-  accent: '#3b82f6',
-  pressHighlight: '#f3f4f6',
-  switchTrackOff: '#d1d5db',
-  switchTrackOn: '#93c5fd',
-  switchThumbOff: '#f4f4f5',
-  switchThumbOn: '#3b82f6',
-  statusBar: 'dark-content',
+  bg:             palette.paper[100],
+  surface:        palette.paper[50],
+  text:           palette.navy[850],
+  textSecondary:  palette.navy[600],
+  textDimmed:     palette.navy[300],
+  textOnAccent:   palette.paper[100],
+  border:         palette.paper[500],
+  accent:         palette.amber[700],
+  success:        palette.sage[700],
+  error:          palette.terracota[700],
+  pressHighlight: palette.paper[300],
+  switchTrackOff: palette.paper[500],
+  switchTrackOn:  palette.amber[300],
+  switchThumbOff: palette.paper[50],
+  switchThumbOn:  palette.amber[700],
+  errorCircleBg:  'rgba(165, 90, 61, 0.14)',
+  warnCircleBg:   'rgba(184, 120, 38, 0.14)',
+  trialBannerBg:  'rgba(184, 120, 38, 0.10)',
+  trialBannerText: palette.amber[800],
+  statusBar:      'dark-content',
 };
 
 type LoadingState = 'loading' | 'loaded' | 'error' | 'empty';
@@ -82,8 +105,6 @@ export default function DeckSelectScreen() {
   const setAlwaysReadBack = useSettingsStore((s) => s.setAlwaysReadBack);
   const darkMode = useSettingsStore((s) => s.darkMode);
   const toggleDarkMode = useSettingsStore((s) => s.toggleDarkMode);
-  const aiProvider = useSettingsStore((s) => s.aiProvider);
-  const setAIProvider = useSettingsStore((s) => s.setAIProvider);
   const deckInstructions = useSettingsStore((s) => s.deckInstructions);
   const setDeckInstructions = useSettingsStore((s) => s.setDeckInstructions);
 
@@ -193,8 +214,8 @@ export default function DeckSelectScreen() {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg, paddingHorizontal: 32 }}>
         <StatusBar barStyle={t.statusBar} backgroundColor={t.bg} />
-        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: darkMode ? '#451a1a' : '#fecaca', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
-          <Text style={{ fontSize: 28, fontWeight: '800', color: '#ef4444' }}>!</Text>
+        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: t.errorCircleBg, alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+          <Text style={{ fontSize: 28, fontWeight: '800', color: t.error }}>!</Text>
         </View>
         <Text style={{ fontSize: 20, fontWeight: '700', color: t.text, textAlign: 'center', marginBottom: 8 }}>
           Cannot Load Decks
@@ -206,7 +227,7 @@ export default function DeckSelectScreen() {
           onPress={loadDecks}
           style={{ backgroundColor: t.accent, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 40 }}
         >
-          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Try Again</Text>
+          <Text style={{ color: t.textOnAccent, fontSize: 15, fontWeight: '700' }}>Try Again</Text>
         </Pressable>
       </View>
     );
@@ -219,8 +240,8 @@ export default function DeckSelectScreen() {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg, paddingHorizontal: 32 }}>
         <StatusBar barStyle={t.statusBar} backgroundColor={t.bg} />
-        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: darkMode ? '#422006' : '#fef3c7', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
-          <Text style={{ fontSize: 28, fontWeight: '800', color: '#d97706' }}>0</Text>
+        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: t.warnCircleBg, alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+          <Text style={{ fontSize: 28, fontWeight: '800', color: t.accent }}>0</Text>
         </View>
         <Text style={{ fontSize: 20, fontWeight: '700', color: t.text, textAlign: 'center', marginBottom: 8 }}>
           No Decks Found
@@ -232,7 +253,7 @@ export default function DeckSelectScreen() {
           onPress={handleRefresh}
           style={{ backgroundColor: t.accent, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 40 }}
         >
-          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Refresh</Text>
+          <Text style={{ color: t.textOnAccent, fontSize: 15, fontWeight: '700' }}>Refresh</Text>
         </Pressable>
       </View>
     );
@@ -260,7 +281,7 @@ export default function DeckSelectScreen() {
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View>
-            <Text style={{ fontSize: 22, fontWeight: '700', color: t.text }}>Anki Voice</Text>
+            <EngramWordmark width={120} color={t.accent} style={{ marginBottom: 2 }} />
             <Text style={{ fontSize: 13, color: t.textSecondary, marginTop: 2 }}>
               {totalDue > 0 ? `${totalDue} cards due` : `${decks.length} decks`}
             </Text>
@@ -321,13 +342,13 @@ export default function DeckSelectScreen() {
           style={{
             marginHorizontal: 16,
             marginTop: 12,
-            backgroundColor: darkMode ? '#1e3a5f' : '#dbeafe',
+            backgroundColor: t.trialBannerBg,
             borderRadius: 12,
             paddingHorizontal: 16,
             paddingVertical: 10,
           }}
         >
-          <Text style={{ fontSize: 13, fontWeight: '600', color: darkMode ? '#93c5fd' : '#1e40af' }}>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: t.trialBannerText }}>
             Free trial: {trialStatus.daysRemaining} days / {trialStatus.sessionsRemaining} sessions remaining
           </Text>
         </View>
@@ -363,92 +384,50 @@ export default function DeckSelectScreen() {
         />
       </View>
 
-      {/* AI Provider selector */}
+      {/* Deck list */}
       <View
         style={{
           marginHorizontal: 16,
           marginTop: 8,
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: t.surface,
           borderRadius: 12,
           borderWidth: 1,
           borderColor: t.border,
           overflow: 'hidden',
+          flex: 1,
+          paddingHorizontal: 12,
         }}
       >
-        <Pressable
-          onPress={() => setAIProvider('openai')}
-          style={{
-            flex: 1,
-            paddingVertical: 10,
-            alignItems: 'center',
-            backgroundColor: aiProvider === 'openai' ? t.accent : 'transparent',
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 13,
-              fontWeight: '700',
-              color: aiProvider === 'openai' ? '#fff' : t.textSecondary,
-            }}
-          >
-            OpenAI
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => setAIProvider('gemini')}
-          style={{
-            flex: 1,
-            paddingVertical: 10,
-            alignItems: 'center',
-            backgroundColor: aiProvider === 'gemini' ? t.accent : 'transparent',
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 13,
-              fontWeight: '700',
-              color: aiProvider === 'gemini' ? '#fff' : t.textSecondary,
-            }}
-          >
-            Gemini
-          </Text>
-        </Pressable>
+        <FlatList
+          data={decks}
+          keyExtractor={(item) => item.deckName}
+          contentContainerStyle={{ paddingBottom: 16 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={t.textSecondary} />
+          }
+          ItemSeparatorComponent={() => (
+            <View style={{ height: 1, backgroundColor: t.border }} />
+          )}
+          renderItem={({ item }) => (
+            <DeckRow
+              deck={item}
+              onPress={() => handleSelectDeck(item.deckName)}
+              onLongPress={() =>
+                setInstructionsModal({
+                  deckName: item.deckName,
+                  text: deckInstructions[item.deckName] || '',
+                })
+              }
+              hasInstructions={!!deckInstructions[item.deckName]}
+              theme={t}
+            />
+          )}
+          ListEmptyComponent={
+            <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+              <Text style={{ color: t.textSecondary }}>No decks available</Text>
+            </View>
+          }
+        />
       </View>
-
-      {/* Deck list */}
-      <FlatList
-        data={decks}
-        keyExtractor={(item) => item.deckName}
-        style={{ marginTop: 8 }}
-        contentContainerStyle={{ paddingBottom: 32 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={t.textSecondary} />
-        }
-        ItemSeparatorComponent={() => (
-          <View style={{ height: 1, backgroundColor: t.border, marginHorizontal: 20 }} />
-        )}
-        renderItem={({ item }) => (
-          <DeckRow
-            deck={item}
-            onPress={() => handleSelectDeck(item.deckName)}
-            onLongPress={() =>
-              setInstructionsModal({
-                deckName: item.deckName,
-                text: deckInstructions[item.deckName] || '',
-              })
-            }
-            hasInstructions={!!deckInstructions[item.deckName]}
-            theme={t}
-          />
-        )}
-        ListEmptyComponent={
-          <View style={{ alignItems: 'center', paddingVertical: 32 }}>
-            <Text style={{ color: t.textSecondary }}>No decks available</Text>
-          </View>
-        }
-      />
 
       {/* Hint text */}
       <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
@@ -541,7 +520,7 @@ export default function DeckSelectScreen() {
                     alignItems: 'center',
                   }}
                 >
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Save</Text>
+                  <Text style={{ color: t.textOnAccent, fontWeight: '700', fontSize: 14 }}>Save</Text>
                 </Pressable>
               </View>
             </View>
@@ -574,7 +553,7 @@ function DeckRow({
       onLongPress={onLongPress}
       style={({ pressed }) => ({
         paddingVertical: 14,
-        paddingHorizontal: 20,
+        paddingHorizontal: 8,
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: pressed ? t.pressHighlight : 'transparent',
@@ -605,7 +584,7 @@ function DeckRow({
             textAlign: 'right',
             fontSize: 13,
             fontWeight: '600',
-            color: deck.newCount > 0 ? '#3b82f6' : t.textDimmed,
+            color: deck.newCount > 0 ? t.accent : t.textDimmed,
           }}
         >
           {deck.newCount}
@@ -617,7 +596,7 @@ function DeckRow({
             fontSize: 13,
             fontWeight: '600',
             marginLeft: 6,
-            color: deck.learnCount > 0 ? '#ef4444' : t.textDimmed,
+            color: deck.learnCount > 0 ? t.error : t.textDimmed,
           }}
         >
           {deck.learnCount}
@@ -629,7 +608,7 @@ function DeckRow({
             fontSize: 13,
             fontWeight: '600',
             marginLeft: 6,
-            color: deck.reviewCount > 0 ? '#22c55e' : t.textDimmed,
+            color: deck.reviewCount > 0 ? t.success : t.textDimmed,
           }}
         >
           {deck.reviewCount}

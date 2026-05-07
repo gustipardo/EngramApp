@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { View, Text, Pressable, Linking, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ankiBridge } from '../../native/ankiBridge';
+import { dark as t } from '../../theme/colors';
+import { EngramWordmark } from '../../components/EngramWordmark';
 
 const ANKIDROID_PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.ichi2.anki';
@@ -18,7 +20,9 @@ export default function AnkiDroidDetectionScreen() {
 
   async function checkAnkiDroidInstallation() {
     setDetectionState('checking');
+    const t0 = Date.now();
     const isInstalled = await ankiBridge.isInstalled();
+    console.log(`[onboarding] ankiBridge.isInstalled() took ${Date.now() - t0}ms → ${isInstalled}`);
     setDetectionState(isInstalled ? 'installed' : 'not-installed');
   }
 
@@ -32,9 +36,10 @@ export default function AnkiDroidDetectionScreen() {
 
   if (detectionState === 'checking') {
     return (
-      <View className="flex-1 items-center justify-center bg-white px-6">
-        <ActivityIndicator size="large" color="#3b82f6" />
-        <Text className="mt-4 text-lg text-gray-600">
+      <View style={S.center}>
+        <EngramWordmark width={140} style={{ marginBottom: 32, opacity: 0.85 }} />
+        <ActivityIndicator size="large" color={t.accent.default} />
+        <Text style={{ marginTop: 16, fontSize: 16, color: t.text.secondary }}>
           Checking for AnkiDroid...
         </Text>
       </View>
@@ -43,70 +48,98 @@ export default function AnkiDroidDetectionScreen() {
 
   if (detectionState === 'installed') {
     return (
-      <View className="flex-1 items-center justify-center bg-white px-6">
-        <View className="mb-8 h-24 w-24 items-center justify-center rounded-full bg-green-100">
-          <Text className="text-5xl">✓</Text>
+      <View style={S.center}>
+        <EngramWordmark width={160} style={{ marginBottom: 40 }} />
+        <View style={[S.statusCircle, { backgroundColor: t.success.subtleBg }]}>
+          <Text style={{ fontSize: 44, color: t.success.text }}>✓</Text>
         </View>
-
-        <Text className="mb-2 text-center text-2xl font-bold text-gray-900">
-          AnkiDroid Detected
+        <Text style={S.title}>AnkiDroid Detected</Text>
+        <Text style={S.body}>
+          Great. AnkiDroid is installed on your device. Set up the connection so you can study your cards with voice.
         </Text>
-
-        <Text className="mb-8 text-center text-base text-gray-600">
-          Great! AnkiDroid is installed on your device. Let's set up the
-          connection so you can study your cards with voice.
-        </Text>
-
-        <Pressable
-          onPress={handleContinue}
-          className="w-full rounded-xl bg-blue-500 px-6 py-4 active:bg-blue-600"
-        >
-          <Text className="text-center text-lg font-semibold text-white">
-            Continue
-          </Text>
+        <Pressable onPress={handleContinue} style={S.primaryBtn}>
+          <Text style={S.primaryBtnText}>Continue</Text>
         </Pressable>
       </View>
     );
   }
 
-  // not-installed state
   return (
-    <View className="flex-1 items-center justify-center bg-white px-6">
-      <View className="mb-8 h-24 w-24 items-center justify-center rounded-full bg-amber-100">
-        <Text className="text-5xl">📚</Text>
+    <View style={S.center}>
+      <EngramWordmark width={160} style={{ marginBottom: 40 }} />
+      <View style={[S.statusCircle, { backgroundColor: t.accent.subtleBg }]}>
+        <Text style={{ fontSize: 36, color: t.accent.default }}>!</Text>
       </View>
-
-      <Text className="mb-2 text-center text-2xl font-bold text-gray-900">
-        AnkiDroid Required
+      <Text style={S.title}>AnkiDroid Required</Text>
+      <Text style={S.body}>
+        Engram works on top of AnkiDroid to study your flashcards through voice. Install AnkiDroid first, then come back.
       </Text>
-
-      <Text className="mb-4 text-center text-base text-gray-600">
-        This app works with AnkiDroid to help you study your flashcards using
-        voice conversations with an AI tutor.
-      </Text>
-
-      <Text className="mb-8 text-center text-base text-gray-600">
-        Please install AnkiDroid from the Play Store, then return here to
-        continue setup.
-      </Text>
-
-      <Pressable
-        onPress={handleOpenPlayStore}
-        className="mb-4 w-full rounded-xl bg-blue-500 px-6 py-4 active:bg-blue-600"
-      >
-        <Text className="text-center text-lg font-semibold text-white">
-          Install AnkiDroid
-        </Text>
+      <Pressable onPress={handleOpenPlayStore} style={[S.primaryBtn, { marginBottom: 12 }]}>
+        <Text style={S.primaryBtnText}>Install AnkiDroid</Text>
       </Pressable>
-
-      <Pressable
-        onPress={checkAnkiDroidInstallation}
-        className="w-full rounded-xl border-2 border-gray-300 px-6 py-4 active:bg-gray-100"
-      >
-        <Text className="text-center text-lg font-semibold text-gray-700">
-          I've Installed It
-        </Text>
+      <Pressable onPress={checkAnkiDroidInstallation} style={S.secondaryBtn}>
+        <Text style={S.secondaryBtnText}>I've installed it</Text>
       </Pressable>
     </View>
   );
 }
+
+const S = {
+  center: {
+    flex: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: t.bg.base,
+    paddingHorizontal: 24,
+  },
+  statusCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginBottom: 24,
+  },
+  title: {
+    marginBottom: 8,
+    textAlign: 'center' as const,
+    fontSize: 26,
+    fontWeight: '700' as const,
+    color: t.text.primary,
+    letterSpacing: -0.4,
+  },
+  body: {
+    marginBottom: 32,
+    textAlign: 'center' as const,
+    fontSize: 15,
+    color: t.text.secondary,
+    lineHeight: 22,
+  },
+  primaryBtn: {
+    width: '100%' as const,
+    borderRadius: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    backgroundColor: t.accent.default,
+  },
+  primaryBtnText: {
+    textAlign: 'center' as const,
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: t.text.onAccent,
+  },
+  secondaryBtn: {
+    width: '100%' as const,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: t.border.strong,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+  },
+  secondaryBtnText: {
+    textAlign: 'center' as const,
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: t.text.primary,
+  },
+} as const;

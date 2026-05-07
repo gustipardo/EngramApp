@@ -2,13 +2,8 @@ import { useEffect, useRef } from 'react';
 import { View, Text, Animated } from 'react-native';
 import { useSessionStore } from '../stores/useSessionStore';
 import { useCardCacheStore } from '../stores/useCardCacheStore';
+import { dark as t } from '../theme/colors';
 
-/**
- * CardDisplay - Visual companion showing current card content and evaluation result
- *
- * Per NFR11: Uses sufficient contrast and font size for quick glance readability
- * Updates driven by store subscriptions, not independent state
- */
 export function CardDisplay() {
   const phase = useSessionStore((s) => s.phase);
   const lastEvaluation = useSessionStore((s) => s.lastEvaluation);
@@ -26,7 +21,6 @@ export function CardDisplay() {
   const showCorrectAnswer =
     lastEvaluation === 'incorrect' && phase === 'giving_feedback';
 
-  // Animate in when evaluation appears
   useEffect(() => {
     if (showEvaluationBadge) {
       fadeAnim.setValue(0);
@@ -52,6 +46,7 @@ export function CardDisplay() {
   }
 
   const isCorrect = lastEvaluation === 'correct';
+  const palette = isCorrect ? t.success : t.error;
 
   return (
     <Animated.View
@@ -60,41 +55,47 @@ export function CardDisplay() {
         transform: [{ scale: scaleAnim }],
         width: '100%',
         borderRadius: 16,
-        borderWidth: 2,
+        borderWidth: 1,
         padding: 20,
-        borderColor: isCorrect ? '#bbf7d0' : '#fecaca',
-        backgroundColor: isCorrect ? '#f0fdf4' : '#fef2f2',
+        borderColor: palette.default,
+        backgroundColor: palette.subtleBg,
       }}
     >
-      {/* Evaluation badge */}
       {showEvaluationBadge && (
-        <View className="mb-2 flex-row items-center">
+        <View style={{ marginBottom: 8, flexDirection: 'row', alignItems: 'center' }}>
           <View
-            className={`h-8 w-8 items-center justify-center rounded-full ${
-              isCorrect ? 'bg-green-500' : 'bg-red-500'
-            }`}
+            style={{
+              height: 32,
+              width: 32,
+              borderRadius: 16,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: palette.default,
+            }}
           >
-            <Text className="text-base font-bold text-white">
-              {isCorrect ? '\u2713' : '\u2717'}
+            <Text style={{ fontSize: 15, fontWeight: '700', color: t.text.onAccent }}>
+              {isCorrect ? '✓' : '✗'}
             </Text>
           </View>
           <Text
-            className={`ml-3 text-lg font-bold ${
-              isCorrect ? 'text-green-700' : 'text-red-700'
-            }`}
+            style={{
+              marginLeft: 12,
+              fontSize: 18,
+              fontWeight: '700',
+              color: palette.text,
+            }}
           >
-            {isCorrect ? 'Correct!' : 'Incorrect'}
+            {isCorrect ? 'Correct' : 'Incorrect'}
           </Text>
         </View>
       )}
 
-      {/* Correct answer (shown after incorrect) */}
       {showCorrectAnswer && currentCard && (
-        <View className="mt-2 border-t border-red-200 pt-3">
-          <Text className="mb-1 text-xs font-semibold uppercase tracking-widest text-red-400">
+        <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: t.border.subtle, paddingTop: 12 }}>
+          <Text style={{ marginBottom: 4, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, color: t.error.text }}>
             Correct Answer
           </Text>
-          <Text className="text-lg font-semibold leading-relaxed text-gray-900">
+          <Text style={{ fontSize: 17, fontWeight: '600', lineHeight: 24, color: t.text.primary }}>
             {currentCard.back}
           </Text>
         </View>

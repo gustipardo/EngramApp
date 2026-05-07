@@ -3,6 +3,7 @@ import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { purchaseSubscription, SubscriptionSku } from '../../services/billingService';
 import { AnalyticsEvents } from '../../services/analytics';
+import { dark as t } from '../../theme/colors';
 
 export default function PaywallScreen() {
   const router = useRouter();
@@ -30,71 +31,99 @@ export default function PaywallScreen() {
   }
 
   return (
-    <View className="flex-1 bg-white px-6 pt-16">
-      <View className="mb-8 items-center">
-        <Text className="mb-2 text-center text-2xl font-bold text-gray-900">
+    <View style={{ flex: 1, backgroundColor: t.bg.base, paddingHorizontal: 24, paddingTop: 64 }}>
+      <View style={{ marginBottom: 32, alignItems: 'center' }}>
+        <Text style={{ marginBottom: 8, textAlign: 'center', fontSize: 26, fontWeight: '700', color: t.text.primary, letterSpacing: -0.4 }}>
           Your Free Trial Has Ended
         </Text>
-        <Text className="text-center text-base text-gray-600">
+        <Text style={{ textAlign: 'center', fontSize: 15, color: t.text.secondary, lineHeight: 22 }}>
           Subscribe to continue studying with your AI voice tutor
         </Text>
       </View>
 
-      {/* Plan options */}
-      <Pressable
+      <PlanOption
+        label="Yearly"
+        price="$39.99/year ($3.33/mo)"
+        badge="Save 33%"
+        selected={selectedPlan === 'yearly'}
         onPress={() => setSelectedPlan('yearly')}
-        className={`mb-3 rounded-xl border-2 p-4 ${
-          selectedPlan === 'yearly' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-        }`}
-      >
-        <View className="flex-row items-center justify-between">
-          <View>
-            <Text className="text-lg font-bold text-gray-900">Yearly</Text>
-            <Text className="text-sm text-gray-600">$39.99/year ($3.33/mo)</Text>
-          </View>
-          <View className="rounded-full bg-green-100 px-3 py-1">
-            <Text className="text-xs font-semibold text-green-700">Save 33%</Text>
-          </View>
-        </View>
-      </Pressable>
-
-      <Pressable
+      />
+      <PlanOption
+        label="Monthly"
+        price="$4.99/month"
+        selected={selectedPlan === 'monthly'}
         onPress={() => setSelectedPlan('monthly')}
-        className={`mb-6 rounded-xl border-2 p-4 ${
-          selectedPlan === 'monthly' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-        }`}
-      >
-        <View>
-          <Text className="text-lg font-bold text-gray-900">Monthly</Text>
-          <Text className="text-sm text-gray-600">$4.99/month</Text>
-        </View>
-      </Pressable>
+      />
 
       {error && (
-        <View className="mb-4 rounded-lg bg-red-50 p-3">
-          <Text className="text-center text-sm text-red-700">{error}</Text>
+        <View style={{ marginTop: 8, marginBottom: 8, borderRadius: 10, padding: 12, backgroundColor: t.error.subtleBg }}>
+          <Text style={{ textAlign: 'center', fontSize: 13, color: t.error.text }}>{error}</Text>
         </View>
       )}
 
       <Pressable
         onPress={handlePurchase}
         disabled={purchasing}
-        className={`rounded-xl px-6 py-4 ${
-          purchasing ? 'bg-gray-300' : 'bg-blue-500 active:bg-blue-600'
-        }`}
+        style={({ pressed }) => ({
+          marginTop: 16,
+          borderRadius: 12,
+          paddingHorizontal: 24,
+          paddingVertical: 16,
+          backgroundColor: purchasing ? t.bg.surface3 : pressed ? t.accent.pressed : t.accent.default,
+        })}
       >
         {purchasing ? (
-          <ActivityIndicator size="small" color="#fff" />
+          <ActivityIndicator size="small" color={t.text.onAccent} />
         ) : (
-          <Text className="text-center text-lg font-semibold text-white">
+          <Text style={{ textAlign: 'center', fontSize: 16, fontWeight: '700', color: t.text.onAccent }}>
             Subscribe
           </Text>
         )}
       </Pressable>
 
-      <Pressable onPress={() => router.back()} className="mt-4 py-3">
-        <Text className="text-center text-sm text-gray-500">Maybe later</Text>
+      <Pressable onPress={() => router.back()} style={{ marginTop: 16, paddingVertical: 12 }}>
+        <Text style={{ textAlign: 'center', fontSize: 13, color: t.text.tertiary }}>Maybe later</Text>
       </Pressable>
     </View>
+  );
+}
+
+function PlanOption({
+  label,
+  price,
+  badge,
+  selected,
+  onPress,
+}: {
+  label: string;
+  price: string;
+  badge?: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        marginBottom: 12,
+        borderRadius: 16,
+        borderWidth: 2,
+        padding: 16,
+        backgroundColor: selected ? t.accent.subtleBg : t.bg.surface1,
+        borderColor: selected ? t.accent.default : t.border.subtle,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: t.text.primary }}>{label}</Text>
+          <Text style={{ fontSize: 13, color: t.text.secondary, marginTop: 2 }}>{price}</Text>
+        </View>
+        {badge && (
+          <View style={{ borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 4, backgroundColor: t.success.subtleBg }}>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: t.success.text }}>{badge}</Text>
+          </View>
+        )}
+      </View>
+    </Pressable>
   );
 }

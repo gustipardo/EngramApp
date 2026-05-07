@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { signInWithGoogle } from '../../services/authService';
 import { AnalyticsEvents } from '../../services/analytics';
+import { dark as t } from '../../theme/colors';
+import { EngramWordmark } from '../../components/EngramWordmark';
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -17,7 +19,7 @@ export default function SignInScreen() {
     AnalyticsEvents.signupStarted();
 
     try {
-      const user = await signInWithGoogle();
+      await signInWithGoogle();
       AnalyticsEvents.signupCompleted('google');
       setOnboardingCompleted(true);
       router.replace('/(main)/deck-select');
@@ -30,42 +32,45 @@ export default function SignInScreen() {
   }
 
   return (
-    <View className="flex-1 items-center justify-center bg-white px-6">
-      <View className="mb-8 items-center">
-        <View className="mb-4 h-24 w-24 items-center justify-center rounded-full bg-blue-100">
-          <Text className="text-5xl">🎙</Text>
-        </View>
-
-        <Text className="mb-2 text-center text-2xl font-bold text-gray-900">
-          Anki Conversacionales
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg.base, paddingHorizontal: 24 }}>
+      <View style={{ marginBottom: 40, alignItems: 'center' }}>
+        <EngramWordmark width={200} style={{ marginBottom: 24 }} />
+        <Text style={{ marginBottom: 8, textAlign: 'center', fontSize: 16, color: t.text.secondary, lineHeight: 24, maxWidth: 320 }}>
+          Study your flashcards with a voice tutor that adapts to how you actually answer.
         </Text>
-
-        <Text className="mb-2 text-center text-base text-gray-600">
-          Study your Anki flashcards with an AI voice tutor
-        </Text>
-
-        <Text className="text-center text-sm text-gray-400">
+        <Text style={{ marginTop: 8, textAlign: 'center', fontSize: 13, color: t.text.tertiary }}>
           Sign in to start your 7-day free trial
         </Text>
       </View>
 
       {error && (
-        <View className="mb-4 w-full rounded-lg bg-red-50 p-3">
-          <Text className="text-center text-sm text-red-700">{error}</Text>
+        <View style={{ marginBottom: 16, width: '100%', borderRadius: 10, padding: 12, backgroundColor: t.error.subtleBg }}>
+          <Text style={{ textAlign: 'center', fontSize: 13, color: t.error.text }}>{error}</Text>
         </View>
       )}
 
       <Pressable
         onPress={handleGoogleSignIn}
         disabled={isSigningIn}
-        className={`w-full flex-row items-center justify-center rounded-xl px-6 py-4 ${
-          isSigningIn ? 'bg-gray-300' : 'bg-blue-500 active:bg-blue-600'
-        }`}
+        style={({ pressed }) => ({
+          width: '100%',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 12,
+          paddingHorizontal: 24,
+          paddingVertical: 16,
+          backgroundColor: isSigningIn
+            ? t.bg.surface3
+            : pressed
+            ? t.accent.pressed
+            : t.accent.default,
+        })}
       >
         {isSigningIn ? (
-          <ActivityIndicator size="small" color="#fff" />
+          <ActivityIndicator size="small" color={t.text.onAccent} />
         ) : (
-          <Text className="text-center text-lg font-semibold text-white">
+          <Text style={{ textAlign: 'center', fontSize: 16, fontWeight: '700', color: t.text.onAccent }}>
             Sign in with Google
           </Text>
         )}
