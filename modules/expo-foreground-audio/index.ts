@@ -1,12 +1,18 @@
 import { NativeModule, requireNativeModule } from 'expo-modules-core';
 
-interface ForegroundAudioEvents {
-  onAudioFocusChange: { state: 'gain' | 'loss' | 'loss_transient' | 'loss_transient_can_duck' };
-  onNotificationAction: { action: 'pause' | 'resume' | 'end' };
-  onAudioData: { data: string };
-}
+// Expo SDK 54 EventsMap constraint requires events to be listener function
+// signatures (`(...args: any[]) => any`), not raw payload object types.
+type ForegroundAudioEvents = {
+  onAudioFocusChange: (event: { state: 'gain' | 'loss' | 'loss_transient' | 'loss_transient_can_duck' }) => void;
+  onNotificationAction: (event: { action: 'pause' | 'resume' | 'end' }) => void;
+  onAudioData: (event: { data: string }) => void;
+};
 
-interface ExpoForegroundAudioInterface extends NativeModule<ForegroundAudioEvents> {
+// Use `declare class extends NativeModule<...>` (not `interface extends`) so
+// the inherited `addListener`/`removeListener`/etc. methods from EventEmitter
+// resolve properly under SDK 54. The interface form picks up the `typeof
+// NativeModule` constructor side instead of the instance side.
+declare class ExpoForegroundAudioNativeModule extends NativeModule<ForegroundAudioEvents> {
   startService(title: string, body: string): Promise<void>;
   stopService(): Promise<void>;
   updateNotification(title: string, body: string): Promise<void>;
@@ -27,6 +33,6 @@ interface ExpoForegroundAudioInterface extends NativeModule<ForegroundAudioEvent
 }
 
 const ExpoForegroundAudioModule =
-  requireNativeModule<ExpoForegroundAudioInterface>('ExpoForegroundAudio');
+  requireNativeModule<ExpoForegroundAudioNativeModule>('ExpoForegroundAudio');
 
 export default ExpoForegroundAudioModule;
