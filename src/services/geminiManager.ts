@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import ExpoForegroundAudioModule from 'expo-foreground-audio';
+import { micSource } from './micSource';
 import { useConnectionStore } from '../stores/useConnectionStore';
 
 const GEMINI_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
@@ -62,8 +63,10 @@ class GeminiManager {
       await ExpoForegroundAudioModule.initAudioPlayer(OUTPUT_SAMPLE_RATE);
       console.log('[Gemini] Step 2 done: Audio player initialized');
 
-      // 3. Start mic capture (muted initially — chunks won't be sent)
-      await ExpoForegroundAudioModule.startMicCapture(INPUT_SAMPLE_RATE);
+      // 3. Start mic capture (muted initially — chunks won't be sent).
+      //    Goes through `micSource` so test mode can substitute a
+      //    pre-recorded PCM stream without touching this code path.
+      await micSource.startCapture(INPUT_SAMPLE_RATE);
       this.setupAudioDataListener();
       console.log('[Gemini] Step 3 done: Mic capture started');
 
@@ -185,8 +188,7 @@ class GeminiManager {
 
   private setupAudioDataListener(): void {
     this.removeAudioDataListener();
-    this.audioDataSubscription = ExpoForegroundAudioModule.addListener(
-      'onAudioData',
+    this.audioDataSubscription = micSource.addListener(
       (event: { data: string }) => {
         this.audioChunksReceived++;
         // Log every 100th chunk (~every 10s) to verify events are arriving
@@ -630,7 +632,7 @@ class GeminiManager {
   // -------------------------------------------------------------------------
 
   private cleanupConnection(): void {
-    ExpoForegroundAudioModule.stopMicCapture().catch(() => {});
+    micSource.stopCapture().catch(() => {});
     this.removeAudioDataListener();
     ExpoForegroundAudioModule.stopAudioPlayer().catch(() => {});
 

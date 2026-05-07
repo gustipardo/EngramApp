@@ -1,13 +1,11 @@
 import '../../global.css';
 import { useEffect } from 'react';
 import { Slot } from 'expo-router';
-import Constants from 'expo-constants';
-import { storeApiKey, hasApiKey } from '../utils/secureStorage';
-import { useSettingsStore } from '../stores/useSettingsStore';
 import { isDev } from '../config/env';
 import { initAnalytics, AnalyticsEvents } from '../services/analytics';
 import { initBilling } from '../services/billingService';
 import { configureGoogleSignIn } from '../services/authService';
+import { installTestHarness } from '../test-harness/bootstrap';
 
 // PostHog config — replace with your actual project key and host
 const POSTHOG_API_KEY = 'YOUR_POSTHOG_API_KEY';
@@ -17,23 +15,10 @@ const POSTHOG_HOST = 'https://us.i.posthog.com';
 const GOOGLE_WEB_CLIENT_ID = 'YOUR_GOOGLE_WEB_CLIENT_ID';
 
 export default function RootLayout() {
-  const setApiKeyStored = useSettingsStore((s) => s.setApiKeyStored);
-  const setOnboardingCompleted = useSettingsStore((s) => s.setOnboardingCompleted);
-
   useEffect(() => {
-    // Dev mode: auto-inject API key from env
-    if (isDev()) {
-      const envKey = Constants.expoConfig?.extra?.openaiApiKey;
-      if (envKey) {
-        hasApiKey().then((already) => {
-          if (already) return;
-          storeApiKey(envKey).then(() => {
-            setApiKeyStored(true);
-            setOnboardingCompleted(true);
-          });
-        });
-      }
-    }
+    // Test harness — swaps mic to fakeMicSource when APP_MODE=test.
+    // No-op otherwise. Must run before any session can start.
+    installTestHarness();
 
     // Initialize analytics
     initAnalytics(POSTHOG_API_KEY, POSTHOG_HOST);
