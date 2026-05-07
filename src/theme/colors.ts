@@ -93,6 +93,19 @@ export const light = {
   scrim:   'rgba(11, 16, 32, 0.5)',
 } as const;
 
-export type ThemeColors = typeof dark;
+// `dark` and `light` use `as const` so each token literal is typed as its
+// exact hex string. That gives nice precise types at the leaves but means
+// `dark` and `light` are *distinct* narrow types — TypeScript can't unify
+// them on a conditional return without help. Widen via the structural shape
+// of `dark`, which `light` matches member-for-member.
+export type ThemeColors = {
+  readonly bg: { readonly base: string; readonly surface1: string; readonly surface2: string; readonly surface3: string };
+  readonly text: { readonly primary: string; readonly secondary: string; readonly tertiary: string; readonly disabled: string; readonly onAccent: string };
+  readonly accent: { readonly default: string; readonly hover: string; readonly pressed: string; readonly subtleBg: string };
+  readonly success: { readonly default: string; readonly text: string; readonly subtleBg: string };
+  readonly error: { readonly default: string; readonly text: string; readonly subtleBg: string };
+  readonly border: { readonly default: string; readonly subtle: string; readonly strong: string };
+  readonly scrim: string;
+};
 
 export const theme = (mode: 'dark' | 'light'): ThemeColors => (mode === 'dark' ? dark : light);
