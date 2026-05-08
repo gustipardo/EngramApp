@@ -26,6 +26,7 @@ class AnkiDroidModule : Module() {
     val DECKS_URI: Uri = Uri.parse("content://$AUTHORITY/decks")
     val SELECTED_DECK_URI: Uri = Uri.parse("content://$AUTHORITY/selected_deck")
     val NOTES_URI: Uri = Uri.parse("content://$AUTHORITY/notes")
+    val CARDS_URI: Uri = Uri.parse("content://$AUTHORITY/cards")
     val SCHEDULE_URI: Uri = Uri.parse("content://$AUTHORITY/schedule")
     // Column names for decks
     const val DECK_ID = "deck_id"
@@ -196,15 +197,10 @@ class AnkiDroidModule : Module() {
 
     // Get cards that are actually DUE for review in a specific deck.
     //
-    // AnkiDroid 2.23.x's `schedule` URI is queue-based and empirically returns
-    // exactly one card per query regardless of `?limit=`. To build a session
-    // longer than one card without depending on write-back to advance the
-    // scheduler queue, we hybrid-load:
-    //   1. `schedule` URI → first card with the correct `ord` for write-back.
-    //   2. `notes/?deckID=` → remaining notes in the deck (ord defaults to 0).
-    // Final list is deduped by noteId and capped at the deck's due count
-    // (from `getDeckInfo`'s parsed counts) so we don't load the entire deck
-    // when only a handful of cards are actually due.
+    // The actual query logic lives in `AnkiDroidQueries.queryDueCards` so
+    // it can be unit-tested from `androidTest/` without the Expo Module
+    // runtime. This wrapper just handles permission gating + Promise
+    // adapter + exception → reject mapping.
     AsyncFunction("getDueCards") { deckName: String, promise: Promise ->
       try {
         val hasPermission = ContextCompat.checkSelfPermission(context, ANKIDROID_PERMISSION) == PackageManager.PERMISSION_GRANTED
@@ -213,139 +209,10 @@ class AnkiDroidModule : Module() {
           return@AsyncFunction
         }
 
-        val deckId = getDeckId(deckName)
-        Log.d(TAG, "getDueCards: deckName='$deckName' deckId=$deckId")
-
-        if (deckId == 0L) {
-          promise.reject("DECK_NOT_FOUND", "Deck '$deckName' not found", null)
-          return@AsyncFunction
-        }
-
-        // AnkiDroid 2.23+ ignores the schedule URI's `?deckID=` query param
-        // and returns cards from whatever deck is globally selected. We must
-        // explicitly set the selected deck via the SELECTED_DECK URI first.
-        setSelectedDeck(deckId)
-
-        // Step 1: Ask AnkiDroid's scheduler for the due cards in this deck.
-        // We keep `?deckID=` and `?limit=` for older AnkiDroid versions that
-        // do honor them; the SELECTED_DECK update above handles 2.23+.
-        val scheduleQueryUri = SCHEDULE_URI.buildUpon()
-          .appendQueryParameter("deckID", deckId.toString())
-          .appendQueryParameter("limit", "500")
-          .build()
-
-        // Capture (noteId, ord) pairs in scheduler order. The `ord` is what
-        // AnkiDroid's update(SCHEDULE_URI) needs to match the exact card we
-        // were just shown — without it, write-back returns 0 rows updated.
-        // NOTE: schedule cursor exposes the column as "ord" (not "card_ord").
-        data class DueRef(val noteId: Long, val ord: Int)
-        val dueRefs = mutableListOf<DueRef>()
-        var schedCursor: Cursor? = null
-        try {
-          schedCursor = contentResolver.query(scheduleQueryUri, null, null, null, null)
-          schedCursor?.let {
-            Log.d(TAG, "getDueCards: schedule columns: ${it.columnNames.joinToString()}")
-            val noteIdIdx = it.getColumnIndex(REVIEW_NOTE_ID)
-            // Schedule URI uses "ord", but be tolerant of "card_ord" too.
-            val ordIdx = it.getColumnIndex("ord").takeIf { i -> i >= 0 }
-              ?: it.getColumnIndex(REVIEW_CARD_ORD)
-            while (it.moveToNext()) {
-              if (noteIdIdx < 0) continue
-              val nid = it.getLong(noteIdIdx)
-              val ord = if (ordIdx >= 0) it.getInt(ordIdx) else 0
-              dueRefs.add(DueRef(nid, ord))
-            }
-          }
-        } finally {
-          schedCursor?.close()
-        }
-
-        Log.d(TAG, "getDueCards: scheduler returned ${dueRefs.size} due cards for deck $deckId")
-
-        // Step 1b: Supplement with all notes in the deck via the `notes` URI.
-        // AnkiDroid's schedule URI is queue-based (head-only on 2.23.x), so
-        // a single call returns ~1 card. We pad the session with the rest
-        // of the deck's notes, capped at the deck's actual due count to
-        // avoid loading hundreds of not-yet-due cards. Order: schedule's
-        // first pick stays at index 0 (preserves correct `ord`); notes from
-        // the broader query follow with `ord = 0` (best-effort — write-back
-        // for these cards may need re-querying schedule URI to recover ord).
-        val dueCount = getDeckDueCount(deckName).coerceAtLeast(1)
-        val seenNoteIds = dueRefs.map { it.noteId }.toMutableSet()
-
-        if (dueRefs.size < dueCount) {
-          val notesQueryUri = NOTES_URI.buildUpon()
-            .appendQueryParameter("deckID", deckId.toString())
-            .appendQueryParameter("limit", dueCount.toString())
-            .build()
-          var notesCursor: Cursor? = null
-          try {
-            notesCursor = contentResolver.query(notesQueryUri, null, null, null, null)
-            notesCursor?.let {
-              Log.d(TAG, "getDueCards: notes columns: ${it.columnNames.joinToString()}")
-              // notes URI exposes the row id as `_id` (FlashCardsContract.Note._ID).
-              val noteIdIdx = it.getColumnIndex("_id").takeIf { i -> i >= 0 }
-                ?: it.getColumnIndex("note_id")
-              while (it.moveToNext() && dueRefs.size < dueCount) {
-                if (noteIdIdx < 0) continue
-                val nid = it.getLong(noteIdIdx)
-                if (seenNoteIds.contains(nid)) continue
-                seenNoteIds.add(nid)
-                dueRefs.add(DueRef(nid, 0))
-              }
-            }
-          } catch (e: Exception) {
-            Log.w(TAG, "getDueCards: notes URI fallback failed: ${e.message}")
-          } finally {
-            notesCursor?.close()
-          }
-          Log.d(TAG, "getDueCards: after notes-URI fallback have ${dueRefs.size} card(s) (cap=$dueCount)")
-        }
-
-        if (dueRefs.isEmpty()) {
-          promise.resolve(emptyList<Map<String, Any>>())
-          return@AsyncFunction
-        }
-
-        // Step 2: Hydrate each note's fields via per-note URI. AnkiDroid's
-        // notes provider does not accept `_id IN (...)` selections, so we
-        // query one note at a time. Sub-100ms for typical batch sizes.
-        val uniqueNoteIds = dueRefs.map { it.noteId }.toSet()
-        val noteFieldsByNoteId = HashMap<Long, String>(uniqueNoteIds.size)
-        for (noteId in uniqueNoteIds) {
-          var noteCursor: Cursor? = null
-          try {
-            val noteUri = Uri.parse("content://$AUTHORITY/notes/$noteId")
-            noteCursor = contentResolver.query(noteUri, null, null, null, null)
-            noteCursor?.let {
-              if (it.moveToFirst()) {
-                val fldsIdx = it.getColumnIndex(NOTE_FLDS)
-                if (fldsIdx >= 0) {
-                  val flds = it.getString(fldsIdx)
-                  if (flds != null) noteFieldsByNoteId[noteId] = flds
-                }
-              }
-            }
-          } catch (e: Exception) {
-            Log.d(TAG, "getDueCards: failed to fetch note $noteId: ${e.message}")
-          } finally {
-            noteCursor?.close()
-          }
-        }
-
-        Log.d(TAG, "getDueCards: hydrated ${noteFieldsByNoteId.size}/${uniqueNoteIds.size} note bodies")
-
-        // Step 3: Build result preserving scheduler order.
-        val cards = mutableListOf<Map<String, Any>>()
-        for (ref in dueRefs) {
-          val fields = noteFieldsByNoteId[ref.noteId] ?: continue
-          val parsed = parseNoteFields(fields, ref.noteId, deckName, ref.ord) ?: continue
-          cards.add(parsed)
-        }
-
-        Log.d(TAG, "getDueCards: returning ${cards.size} due cards for '$deckName'")
+        val cards = queryDueCards(contentResolver, deckName)
         promise.resolve(cards)
-        return@AsyncFunction
+      } catch (e: IllegalArgumentException) {
+        promise.reject("DECK_NOT_FOUND", e.message ?: "Deck not found", e)
       } catch (e: SecurityException) {
         promise.reject("PERMISSION_DENIED", "Permission denied when accessing AnkiDroid: ${e.message}", e)
       } catch (e: Exception) {
@@ -532,16 +399,20 @@ class AnkiDroidModule : Module() {
 
   private data class DeckCounts(val new: Int, val learn: Int, val review: Int)
 
-  // Parse deck_counts JSON — AnkiDroid returns "[new, lrn, rev]" format
+  // Parse deck_counts JSON. Per AnkiDroid's FlashCardsContract, DECK_COUNTS
+  // is a 3-element JSON array in the order [learn, review, new] — NOT
+  // [new, learn, review] as previously assumed. Mislabelling caused the
+  // deck list to show wrong-answered counts under "newCount", review-due
+  // counts under "learnCount", and new-card counts under "reviewCount".
   private fun parseDeckCountsSeparate(raw: String?): DeckCounts {
     if (raw == null) return DeckCounts(0, 0, 0)
     return try {
       val cleaned = raw.trim().removePrefix("[").removeSuffix("]")
       val parts = cleaned.split(",").map { it.trim().toIntOrNull() ?: 0 }
       DeckCounts(
-        new = parts.getOrElse(0) { 0 },
-        learn = parts.getOrElse(1) { 0 },
-        review = parts.getOrElse(2) { 0 }
+        learn = parts.getOrElse(0) { 0 },
+        review = parts.getOrElse(1) { 0 },
+        new = parts.getOrElse(2) { 0 }
       )
     } catch (e: Exception) {
       DeckCounts(0, 0, 0)
