@@ -109,6 +109,70 @@ The app currently uses Beta endpoints. Update to GA:
 
 ---
 
+## Recently shipped (2026-05-08 — test-suite expansion + deck-mixing fix)
+
+### Production fixes (commits)
+- [x] `36fa52b fix(anki)` — repair deck mixing in `getDueCards`. Switched padding from notes URI (`?deckID=` ignored on AnkiDroid 2.23+) to cards URI (`?query=did:<id>` respected) + defense-in-depth `did != deckId` row filter. Also fixed `parseDeckCountsSeparate` field order (was `[new, learn, review]`, AnkiDroid actually returns `[learn, review, new]`). **Pending: rebuild + reinstall APK on phone (`npm run android`) to verify.**
+- [x] `386c061 fix(session)` — fire-and-forget AnkiDroid write-back (was awaited; AnkiDroid hangs caused Gemini `toolCallCancellation` race). Tightened `response.done` to act only on `phase=='giving_feedback'` (matches real Gemini's two-turn-per-evaluation shape). Added Gemini VAD config (HIGH end-of-speech sensitivity, 800ms silence) — fixes the multi-minute turn-commit stalls.
+- [x] `798854f feat(prompts)` — system prompt forbids AI verbalising verdict before tool call. Prevents the "tutor says correct but no popup" bug class at the AI behavior level.
+- [x] `c36827b feat(theme)` — slate/info color tokens.
+
+### Testing infrastructure
+- [x] `7bcef89 test(layer-2)` — 13 new Layer 2 tests. `silentGrade*` family (AI verbalises but doesn't tool-call: no write, no popup, no advance, phase recovers). `toolCallNoAudio` (characterizes UI stuck after tool fires but before audio.delta). Phase + advance invariants. Total 102 → 115 tests.
+- [x] `1d10089 test(layer-5)` — Kotlin instrumented suite for `getDueCards` deck isolation. 5 tests on real AnkiDroid emulator. The only layer that catches the deck-mixing bug class. Run with `npm run test:instrumented`.
+- [x] `8ee5f4d test(layer-6)` — Maestro scaffold for full-app deck isolation. Selectors not yet validated. Run with `npm run test:maestro` (requires Engram APK installed on emulator).
+- [x] Refactor: `AnkiDroidQueries.kt` extracted from `AnkiDroidModule.kt` so instrumented tests can call production logic directly without the Expo `Module()` runtime.
+- [x] `scripts/test-instrumented.sh` — boots `Pixel_9_Automatic` headless if no device attached. Idempotent.
+- [x] `npm run test`, `test:instrumented`, `test:maestro`, `test:all`. `TESTING.md` rewritten as 6-layer doc with bug-class catchment table.
+
+### Bugs the user reported in this session
+1. **Deck mixing in a session** — cards from other decks (Refold "Go on") leaking into AwsExamSA. **PRODUCTION FIX SHIPPED**, regression caught by Layer 5. Requires phone rebuild to verify on hardware.
+2. **Tutor advances but UI freezes on previous card** — store advances but `session.tsx` doesn't redraw. **NOT FIXED**. Needs UI rendering tests (`@testing-library/react-native` — see Pending).
+3. **Tutor says correct/incorrect but no popup, card not marked** — AI verbalises without firing `evaluate_and_move_next`. **PARTIALLY FIXED**: prompt commit (`798854f`) makes AI less likely to do it; Layer 2 `silentGrade` tests pin the no-op JS-state behavior. Recovery (detect + retry) NOT implemented.
+
+---
+
+## Pending — testing gaps (priority order)
+
+### P0 — verify the production fix
+- [ ] Rebuild + reinstall APK on the phone: `npm run android`. Run a session against AwsExamSA + at least one other deck (Refold or Phrasal Verbs). Confirm no foreign-deck cards appear during the session.
+
+### P1 — UI rendering tests (catches bug 2 from this session)
+- [ ] Add `@testing-library/react-native` + jsdom env config in `jest.config.js`.
+- [ ] Snapshot-test `src/app/(main)/session.tsx` against each `SessionPhase` (`idle | connecting | loading_cards | ready | awaiting_answer | evaluating | giving_feedback | session_complete | error`).
+- [ ] Assert the popup component is bound to `useSessionStore.lastEvaluation` and re-renders when the store updates.
+- [ ] Assert "Card N of M" text actually changes when `currentCardIndex` advances. **This is the gap that lets bug 2 slip past Layer 2.**
+- [ ] Estimated 2-3h.
+
+### P1 — Layer 3 expansion (catches AI behavior regressions)
+- [ ] Run all 8 replay fixtures (happyPath, mixedResults, override*, silentGrade*, toolCallNoAudio) through `realGeminiTextRunner`. Currently only 1 fixture goes through real Gemini.
+- [ ] Validates the prompt-discipline change in `798854f` against actual Gemini behavior.
+- [ ] Run with `TEST_REAL_GEMINI=1 GEMINI_API_KEY=... npx jest realGemini.text`.
+- [ ] Estimated 1h, ~$0.10 in Gemini API costs.
+
+### P1 — Implement recovery for tool-call-no-audio
+- [ ] Currently the session sticks in `evaluating` if the AI tool-calls but never speaks. Layer 2 `toolCallNoAudio` characterizes the stuck state.
+- [ ] Add a timeout (e.g. 8 seconds) in the `evaluating` phase: if no `response.audio.delta` arrives, force-advance the card and transition to `awaiting_answer`.
+- [ ] Flip the `toolCallNoAudio` test assertion from "phase stuck in evaluating" to "phase recovers to awaiting_answer".
+
+### P2 — Layer 2 fixture coverage gaps
+- [ ] `reconnectMidSession` — adds `__simulateConnectionDropped()` to `mockGeminiManager`; verifies reconnect → resume message → write-back continuity. Covers `installConnectionDropHandler` + `attemptReconnectAndResume` (~120 LOC currently untested).
+- [ ] `endOfDeck` — last card answered → `session_complete` + `onSessionComplete` flow (sync triggered, foreground stopped).
+- [ ] `endSessionToolMidDeck` — user invokes `end_session` on card 2 of 4 (the 5-second setTimeout completion path).
+- [ ] `notificationLifecycle` — un-mock `foregroundAudioService`, spy on calls, assert ordering: start before `sendFirstCard`, update on each card advance, stop on completion.
+- [ ] Estimated 3-4h total.
+
+### P2 — Maestro execution
+- [ ] Build Engram APK with `APP_MODE=test` so `installTestHarness()` swaps `fakeMicSource` + auth bypass kicks in. Verify Firebase / Gemini test bypass paths actually skip those screens.
+- [ ] Adjust selectors in `.maestro/session-deck-isolation.yaml` and subflows to match real UI text.
+- [ ] Run `npm run test:maestro`.
+
+### P3 — Layer 5 coverage for write-back
+- [ ] Finish the AnkiDroidQueries.kt extraction for `answerCard`. Currently only `getDueCards` is extracted; `answerCard` still has its own inline copy of helpers.
+- [ ] Add `submitCardAnswer_writesToCorrectCard` instrumented test.
+
+---
+
 ## Recently shipped (2026-05-06 evening session)
 
 ### Multi-card sessions (was: every session was 1 card long)
