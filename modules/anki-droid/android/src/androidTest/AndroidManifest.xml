@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    AnkiDroid's API is gated behind a custom permission declared by the
+    AnkiDroid app itself. The instrumented test APK is a separate package
+    from AnkiDroid (and from our Engram APK), so it has to declare the
+    permission here AND have it granted at runtime via:
+
+      adb shell pm grant expo.modules.ankidroid.test \
+        com.ichi2.anki.permission.READ_WRITE_DATABASE
+
+    The npm script test:instrumented handles that grant after install.
+  -->
+  <uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE" />
+
+  <queries>
+    <package android:name="com.ichi2.anki" />
+  </queries>
+</manifest>
