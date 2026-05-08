@@ -39,6 +39,7 @@ export const palette = {
   },
   sage:      { 300: '#8ABDA0', 500: '#6B9B7E', 700: '#4A7B5C' },
   terracota: { 300: '#D98E6F', 500: '#C67B5C', 700: '#A55A3D' },
+  slate:     { 300: '#8FA9C5', 500: '#6B8AAC', 700: '#4D6889' },
 } as const;
 
 export const dark = {
@@ -63,6 +64,7 @@ export const dark = {
   },
   success: { default: palette.sage[500], text: palette.sage[300], subtleBg: 'rgba(107, 155, 126, 0.12)' },
   error:   { default: palette.terracota[500], text: palette.terracota[300], subtleBg: 'rgba(198, 123, 92, 0.14)' },
+  info:    { default: palette.slate[500], text: palette.slate[300], subtleBg: 'rgba(107, 138, 172, 0.12)' },
   border:  { default: palette.navy[600], subtle: palette.navy[700], strong: palette.navy[500] },
   scrim:   'rgba(11, 16, 32, 0.6)',
 } as const;
@@ -89,6 +91,7 @@ export const light = {
   },
   success: { default: palette.sage[700], text: palette.sage[700], subtleBg: 'rgba(74, 123, 92, 0.10)' },
   error:   { default: palette.terracota[700], text: palette.terracota[700], subtleBg: 'rgba(165, 90, 61, 0.10)' },
+  info:    { default: palette.slate[700], text: palette.slate[700], subtleBg: 'rgba(77, 104, 137, 0.10)' },
   border:  { default: palette.paper[500], subtle: palette.paper[400], strong: palette.paper[600] },
   scrim:   'rgba(11, 16, 32, 0.5)',
 } as const;
@@ -104,6 +107,7 @@ export type ThemeColors = {
   readonly accent: { readonly default: string; readonly hover: string; readonly pressed: string; readonly subtleBg: string };
   readonly success: { readonly default: string; readonly text: string; readonly subtleBg: string };
   readonly error: { readonly default: string; readonly text: string; readonly subtleBg: string };
+  readonly info: { readonly default: string; readonly text: string; readonly subtleBg: string };
   readonly border: { readonly default: string; readonly subtle: string; readonly strong: string };
   readonly scrim: string;
 };

@@ -38,6 +38,7 @@ interface Theme {
   accent: string;
   success: string;
   error: string;
+  info: string;
   pressHighlight: string;
   switchTrackOff: string;
   switchTrackOn: string;
@@ -61,6 +62,7 @@ const darkTheme: Theme = {
   accent:         palette.amber[500],
   success:        palette.sage[500],
   error:          palette.terracota[500],
+  info:           palette.slate[500],
   pressHighlight: palette.navy[700],
   switchTrackOff: palette.navy[400],
   switchTrackOn:  palette.amber[700],
@@ -84,6 +86,7 @@ const lightTheme: Theme = {
   accent:         palette.amber[700],
   success:        palette.sage[700],
   error:          palette.terracota[700],
+  info:           palette.slate[700],
   pressHighlight: palette.paper[300],
   switchTrackOff: palette.paper[500],
   switchTrackOn:  palette.amber[300],
@@ -584,7 +587,7 @@ function DeckRow({
             textAlign: 'right',
             fontSize: 13,
             fontWeight: '600',
-            color: deck.newCount > 0 ? t.accent : t.textDimmed,
+            color: deck.newCount > 0 ? t.info : t.textDimmed,
           }}
         >
           {deck.newCount}

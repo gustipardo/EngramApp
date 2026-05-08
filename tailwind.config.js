@@ -48,6 +48,11 @@ module.exports = {
           500: '#C67B5C',
           700: '#A55A3D',
         },
+        slate: {
+          300: '#8FA9C5',
+          500: '#6B8AAC',
+          700: '#4D6889',
+        },
         bg: {
           base:     '#0B1020',
           surface1: '#11182A',
@@ -68,6 +73,7 @@ module.exports = {
         },
         success: { DEFAULT: '#6B9B7E', text: '#8ABDA0' },
         error:   { DEFAULT: '#C67B5C', text: '#D98E6F' },
+        info:    { DEFAULT: '#6B8AAC', text: '#8FA9C5' },
         border: {
           DEFAULT: '#2A3250',
           subtle:  '#24304A',
