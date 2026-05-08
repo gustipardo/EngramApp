@@ -102,6 +102,9 @@ import {
   overrideIncorrectToCorrect,
   overrideCorrectToIncorrect,
   overrideNoChange,
+  silentGradeNoToolCall,
+  silentGradeThenRealGrade,
+  toolCallNoAudio,
 } from '../fixtures/scripts';
 
 const ctx = {
@@ -181,6 +184,115 @@ describe('Layer 2 — replay harness', () => {
       expect(result.ankiWrites).toEqual([]);
       const overrideToolResult = result.perTurn[0].toolResultAfter;
       expect(overrideToolResult?.result?.status).toBe('no_change');
+    });
+  });
+
+  describe('silent grade — AI verbalises a verdict but never tool-calls', () => {
+    it('does NOT write to AnkiDroid when no tool call fires', async () => {
+      const result = await runFixture(silentGradeNoToolCall, ctx);
+      expect(result.ankiWrites).toEqual([]);
+    });
+
+    it('does NOT change stats — silent verdict carries no weight', async () => {
+      const result = await runFixture(silentGradeNoToolCall, ctx);
+      expect(result.finalStats).toEqual({ correct: 0, incorrect: 0 });
+    });
+
+    it('does NOT set lastEvaluation — popup state stays cleared', async () => {
+      // The verdict popup is bound to lastEvaluation. If it fires from
+      // anywhere except recordAnswer (called only by handleEvaluateAndMoveNext),
+      // the user sees a green/red flash for a verdict the system never
+      // actually committed — the exact "tutor says correct but card
+      // not effectively marked" symptom.
+      const result = await runFixture(silentGradeNoToolCall, ctx);
+      expect(result.perTurn[0].lastEvaluationAfter).toBeNull();
+    });
+
+    it('does NOT advance the card — UI stays on the same question', async () => {
+      const result = await runFixture(silentGradeNoToolCall, ctx);
+      expect(result.perTurn[0].cardIndexAfter).toBe(0);
+    });
+
+    it('lands phase in awaiting_answer so user can retry', async () => {
+      // After audio.delta + response.done with no tool call, phase walks:
+      //   awaiting_answer → evaluating → giving_feedback → awaiting_answer.
+      // The advance branch's pendingCardAdvance check is false (no tool
+      // call ran handleEvaluate), so no advance — but phase still resets
+      // so the next user turn isn't blocked.
+      const result = await runFixture(silentGradeNoToolCall, ctx);
+      expect(result.perTurn[0].phaseAfter).toBe('awaiting_answer');
+    });
+
+    it('recovers on a real grade after a silent one', async () => {
+      const result = await runFixture(silentGradeThenRealGrade, ctx);
+      // Only the second turn (real grade) writes.
+      expect(result.ankiWrites).toEqual([
+        { cardId: 1001, pass: true },
+      ]);
+      expect(result.finalStats).toEqual({ correct: 1, incorrect: 0 });
+      // Card advanced once on the real grade.
+      expect(result.perTurn[0].cardIndexAfter).toBe(0);
+      expect(result.perTurn[1].cardIndexAfter).toBe(1);
+    });
+  });
+
+  describe('tool call without follow-up audio — UI-stuck characterization', () => {
+    // These tests pin the CURRENT stuck-state behavior. Today the session
+    // gets stuck in 'evaluating' if the AI tool-calls but never speaks
+    // afterward — the second response.done that would normally advance
+    // the card never arrives, and there's no recovery mechanism. Adding
+    // a timeout/force-advance later will deliberately break these
+    // assertions and force an explicit update.
+    it('writes the answer to AnkiDroid (the tool result side works)', async () => {
+      const result = await runFixture(toolCallNoAudio, ctx);
+      expect(result.ankiWrites).toEqual([
+        { cardId: 1001, pass: true },
+      ]);
+    });
+
+    it('updates stats — recordAnswer ran from the tool handler', async () => {
+      const result = await runFixture(toolCallNoAudio, ctx);
+      expect(result.finalStats).toEqual({ correct: 1, incorrect: 0 });
+    });
+
+    it('does NOT advance the card index — visual stays on card 1', async () => {
+      const result = await runFixture(toolCallNoAudio, ctx);
+      expect(result.perTurn[0].cardIndexAfter).toBe(0);
+    });
+
+    it('phase is stuck in evaluating (no recovery yet)', async () => {
+      // CURRENT BEHAVIOR. When recovery lands, change to 'awaiting_answer'.
+      const result = await runFixture(toolCallNoAudio, ctx);
+      expect(result.perTurn[0].phaseAfter).toBe('evaluating');
+    });
+  });
+
+  describe('phase + advance invariants — happy path', () => {
+    it('every non-final answer turn ends in awaiting_answer', async () => {
+      const result = await runFixture(happyPath, ctx);
+      // 3 cards. Turn 0 and 1 are non-final; turn 2 is the last and ends
+      // in session_complete.
+      expect(result.perTurn[0].phaseAfter).toBe('awaiting_answer');
+      expect(result.perTurn[1].phaseAfter).toBe('awaiting_answer');
+      expect(result.perTurn[2].phaseAfter).toBe('session_complete');
+    });
+
+    it('card index advances by exactly 1 after each non-final answer', async () => {
+      const result = await runFixture(happyPath, ctx);
+      // Index starts at 0. After turn 0 advance → 1, after turn 1 → 2,
+      // after turn 2 (session_complete branch) → still advances → 3 (out of range).
+      expect(result.perTurn[0].cardIndexAfter).toBe(1);
+      expect(result.perTurn[1].cardIndexAfter).toBe(2);
+    });
+
+    it('lastEvaluation reflects the most recent grade for the popup', async () => {
+      const result = await runFixture(mixedResults, ctx);
+      // mixedResults: correct, incorrect, skipped, correct.
+      expect(result.perTurn[0].lastEvaluationAfter).toBe('correct');
+      expect(result.perTurn[1].lastEvaluationAfter).toBe('incorrect');
+      // Skipped does NOT change lastEvaluation — stays at the previous value.
+      expect(result.perTurn[2].lastEvaluationAfter).toBe('incorrect');
+      expect(result.perTurn[3].lastEvaluationAfter).toBe('correct');
     });
   });
 

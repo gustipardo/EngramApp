@@ -33,6 +33,8 @@ export interface RunResult {
   ankiWrites: Array<{ cardId: number; pass: boolean }>;
   /** Final stats from the session store. */
   finalStats: { correct: number; incorrect: number };
+  /** Final phase from the session store (e.g. 'awaiting_answer', 'session_complete'). */
+  finalPhase: string;
   /** Tool results sent back to the (mock) AI, in order. */
   toolResults: Array<{ callId: string; result: any }>;
   /** Per-turn diagnostics for debugging failed assertions. */
@@ -40,6 +42,12 @@ export interface RunResult {
     turn: Turn;
     ankiWritesAfter: Array<{ cardId: number; pass: boolean }>;
     statsAfter: { correct: number; incorrect: number };
+    /** Phase observed at the end of this turn — used to assert UI/state isn't stuck. */
+    phaseAfter: string;
+    /** lastEvaluation in the session store at end of turn — drives the verdict popup. */
+    lastEvaluationAfter: 'correct' | 'incorrect' | null;
+    /** sessionStore.currentCardIndex at end of turn — what the UI binds to. */
+    cardIndexAfter: number;
     toolResultAfter: { callId: string; result: any } | null;
   }>;
 }
@@ -94,15 +102,24 @@ export async function runFixture(fixture: Fixture, ctx: RunContext): Promise<Run
 
     if (turn.kind === 'answer') {
       mockMgr.__simulateUserTranscript(turn.userSaid);
-      mockMgr.__simulateAiAudioDelta();
+      // Production shape: Gemini emits two model turns per evaluation:
+      //   (1) silent turn ending in toolCall + turnComplete — response.done
+      //       arrives while phase is still 'evaluating' and is intentionally
+      //       skipped by the handler.
+      //   (2) speaking turn — audio.delta flips phase to 'giving_feedback',
+      //       then turnComplete (response.done) advances the card.
+      // Compressing both into one (audio before tool, single done) used to
+      // work, but the response.done handler in sessionManager was tightened
+      // to only act on 'giving_feedback' to match real Gemini — so the
+      // runner has to mirror that two-turn shape.
       mockMgr.__simulateAiToolCall('evaluate_and_move_next', {
         user_response_quality: turn.aiGraded,
         feedback_text: turn.feedbackText ?? `[${turn.aiGraded}]`,
       });
-      // Let any micro-tasks queued by the handler settle (anki write-back
-      // is fire-and-forget, but the tool result is sent synchronously).
       await flushMicrotasks();
-      mockMgr.__simulateAiResponseDone();
+      mockMgr.__simulateAiResponseDone();   // silent tool-call turn ends — handler skipped
+      mockMgr.__simulateAiAudioDelta();     // speaking turn begins — phase → giving_feedback
+      mockMgr.__simulateAiResponseDone();   // speaking turn ends — advance + awaiting_answer
     } else if (turn.kind === 'override') {
       mockMgr.__simulateUserTranscript(turn.userSaid);
       mockMgr.__simulateAiAudioDelta();
@@ -113,6 +130,28 @@ export async function runFixture(fixture: Fixture, ctx: RunContext): Promise<Run
       mockMgr.__simulateUserTranscript(turn.userSaid);
       mockMgr.__simulateAiToolCall('end_session', {});
       await flushMicrotasks();
+    } else if (turn.kind === 'silentGrade') {
+      // AI verbalises a verdict but never tool-calls. Mirrors the
+      // production failure mode users have reported: tutor says
+      // "correct" / "incorrect" but no popup, no card advance, no
+      // write — because evaluate_and_move_next never fires.
+      mockMgr.__simulateUserTranscript(turn.userSaid);
+      mockMgr.__simulateAiAudioDelta();
+      await flushMicrotasks();
+      mockMgr.__simulateAiResponseDone();
+    } else if (turn.kind === 'toolCallNoAudio') {
+      // AI calls the tool correctly but never speaks the verdict. The
+      // first response.done arrives while phase is still 'evaluating'
+      // and is intentionally skipped; with no follow-up audio.delta
+      // the session sticks. Captures the "UI stuck on a card while
+      // tutor advances internally" symptom.
+      mockMgr.__simulateUserTranscript(turn.userSaid);
+      mockMgr.__simulateAiToolCall('evaluate_and_move_next', {
+        user_response_quality: turn.aiGraded,
+        feedback_text: turn.feedbackText ?? `[${turn.aiGraded}]`,
+      });
+      await flushMicrotasks();
+      mockMgr.__simulateAiResponseDone();
     }
 
     const toolResultAfter = mockMgr.sentToolResults[writesBefore] ?? null;
@@ -121,6 +160,9 @@ export async function runFixture(fixture: Fixture, ctx: RunContext): Promise<Run
       turn,
       ankiWritesAfter: collectAnkiWrites(answerCardSpy),
       statsAfter: { ...useSessionStore.getState().stats },
+      phaseAfter: useSessionStore.getState().phase,
+      lastEvaluationAfter: useSessionStore.getState().lastEvaluation,
+      cardIndexAfter: useSessionStore.getState().currentCardIndex,
       toolResultAfter,
     });
   }
@@ -128,6 +170,7 @@ export async function runFixture(fixture: Fixture, ctx: RunContext): Promise<Run
   return {
     ankiWrites: collectAnkiWrites(answerCardSpy),
     finalStats: { ...useSessionStore.getState().stats },
+    finalPhase: useSessionStore.getState().phase,
     toolResults: [...mockMgr.sentToolResults],
     perTurn,
   };
