@@ -3,7 +3,6 @@ import { loadDueCards, getCurrentCard, getNextCard, getRemainingCardCount, getTo
 import { useSessionStore } from '../stores/useSessionStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
-import { useCardCacheStore } from '../stores/useCardCacheStore';
 import { ankiBridge } from '../native/ankiBridge';
 import { getSystemPrompt, allTools, getInitialMessage, getResumeMessage, formatToolResult } from '../config/prompts';
 import { startForegroundService, stopForegroundService, updateForegroundNotification, requestAudioFocus, clearAudioFocusPauseFlag, isServiceRunning } from './foregroundAudioService';
@@ -209,11 +208,24 @@ class SessionManager {
       }
     });
 
-    // Handle AI finished speaking — advance card and transition to awaiting_answer
+    // Handle AI finished speaking — advance card and transition to awaiting_answer.
+    //
+    // Gemini Live emits turnComplete (= response.done) at the end of *every*
+    // model turn, including the turn that ends with a toolCall — i.e. before
+    // the client has even sent the tool response. If we acted on that first
+    // turnComplete, phase would flip to awaiting_answer prematurely; the
+    // response.audio.delta handler would then no-op (it only transitions
+    // out of 'evaluating'), and the second turnComplete (after the AI
+    // actually speaks the next card) would arrive in awaiting_answer and
+    // the visual card would never advance.
+    //
+    // Only acting on giving_feedback ensures we wait for a turn that
+    // actually contained AI audio (audio.delta is what flips the phase to
+    // giving_feedback). The toolCall-only turn is silent and stays in
+    // 'evaluating', so it is safely ignored.
     webrtcManager.on('response.done', () => {
       const phase = useSessionStore.getState().phase;
-      if (phase === 'giving_feedback' || phase === 'asking_question' || phase === 'evaluating') {
-        // Advance the visual card now that the AI finished feedback + next question
+      if (phase === 'giving_feedback') {
         if (this.pendingCardAdvance) {
           this.pendingCardAdvance = false;
           useSessionStore.getState().advanceCard();
@@ -495,9 +507,26 @@ class SessionManager {
     const answeredCardId = currentCard?.cardId ?? null;
     const answeredCardOrd = currentCard?.cardOrd ?? null;
 
-    // Record answer + AWAIT write-back. AnkiDroid's scheduler can only
-    // hand us the next due card after the previous one is graded, so the
-    // write-back must complete before we re-query for the next card.
+    // Record answer + fire-and-forget write-back. CRITICAL: do NOT await.
+    //
+    // Background: when this was awaited, an AnkiDroid RuntimeException on
+    // a problematic card caused contentResolver.update() to hang for 3+
+    // seconds. During that window, Gemini Live's server emitted
+    // `toolCallCancellation` for our pending function call (it gives up
+    // when the client doesn't respond within ~1s). We then sent a stale
+    // tool result for an already-cancelled call, the AI got out of sync,
+    // and subsequent cards desynced. By detaching write-back from the
+    // tool-result path, the result reaches Gemini in milliseconds and
+    // Gemini never cancels. Write-back errors are logged; the in-app
+    // session continues regardless. AnkiDroid sync at session end is the
+    // safety net for any cards that fail to write back individually.
+    //
+    // Also: we no longer re-query getDueCards inside this handler. The
+    // initial loadDueCards already populated the cache with all cards
+    // capped at the deck's dueCount, so the next-card peek below pulls
+    // from the existing cache. Re-querying inside a tool handler was
+    // racy (it added latency that caused the toolCallCancellation above)
+    // and brought no new information vs. the initial load.
     if (user_response_quality !== 'skipped') {
       recordAnswer(user_response_quality as 'correct' | 'incorrect');
       transitionTo('evaluating', 'tool_called');
@@ -507,35 +536,16 @@ class SessionManager {
         this.lastAnsweredCardId = answeredCardId;
         this.lastAnsweredCardOrd = answeredCardOrd;
         const pass = user_response_quality === 'correct';
-        try {
-          await ankiBridge.answerCard(deckForAnswer, answeredCardId, answeredCardOrd, pass);
-        } catch (err) {
-          console.warn('[SessionManager] write-back unexpected error:', err);
-        }
+        ankiBridge.answerCard(deckForAnswer, answeredCardId, answeredCardOrd, pass).catch((err) => {
+          console.warn('[SessionManager] write-back error (non-fatal):', err);
+        });
       }
     }
 
-    // Re-query AnkiDroid for the next due card. The schedule URI returns
-    // one card per call, so a fresh fetch after each answer is required —
-    // we cannot preload the whole session upfront.
-    const { selectedDeck } = useSettingsStore.getState();
-    if (selectedDeck) {
-      try {
-        const fresh = await ankiBridge.getDueCards(selectedDeck);
-        if (fresh.length > 0) {
-          const appended = useCardCacheStore.getState().appendCards(fresh);
-          console.log(`[SessionManager] re-fetched ${fresh.length} due card(s), appended ${appended} new`);
-        } else {
-          console.log('[SessionManager] re-fetched: scheduler returned no more due cards');
-        }
-      } catch (err) {
-        console.warn('[SessionManager] re-fetch failed:', err);
-      }
-    }
-
-    // Peek at next card WITHOUT advancing — the visual card stays on
-    // the current one while the AI gives feedback. Advance happens
-    // on response.done so card display stays in sync with AI speech.
+    // Peek at next card from the existing cache WITHOUT advancing — the
+    // visual card stays on the current one while the AI gives feedback.
+    // Advance happens on response.done so card display stays in sync
+    // with AI speech.
     const nextCard = peekNextCard();
     const remainingCards = peekRemainingAfterAdvance();
     const stats = useSessionStore.getState().stats;

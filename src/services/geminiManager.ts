@@ -376,6 +376,22 @@ class GeminiManager {
         },
         outputAudioTranscription: {},
         inputAudioTranscription: {},
+        // Tune Gemini's server-side VAD. Without this block, defaults apply
+        // and we observed multi-minute stalls between user speech and the
+        // toolCall, only unblocked by the user manually pausing/resuming
+        // (which mute-pulses the mic and forces buffer commit). Symptoms in
+        // logs: empty `serverContent.turnComplete` events with no audio or
+        // function call. HIGH end-of-speech sensitivity + a tighter silence
+        // window makes Gemini commit the user turn promptly when they stop
+        // talking.
+        realtimeInputConfig: {
+          automaticActivityDetection: {
+            startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
+            endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
+            prefixPaddingMs: 300,
+            silenceDurationMs: 800,
+          },
+        },
       };
 
       if (config.instructions) {

@@ -272,68 +272,54 @@ describe('sessionManager — evaluate_and_move_next dispatch', () => {
     expect(mockTriggerSync).toHaveBeenCalled();
   });
 
-  it('re-queries AnkiDroid after each answer and presents the new card (multi-card session)', async () => {
-    // Mirrors the real device flow: AnkiDroid's schedule URI returns one
-    // card at a time, so sessionManager must re-fetch after every answer
-    // and append new cards to the cache. This test exercises three answers
-    // back-to-back and confirms each one yields a fresh card from the
-    // scheduler, ending only when the scheduler returns empty.
-
-    // Use a real cardCacheStore (not mocked) so we can assert append behavior.
-    // Re-mock cardLoader helpers to read from the real store.
-    const { useCardCacheStore: realCacheStore } = require('../../stores/useCardCacheStore');
+  it('walks through the pre-populated cache without re-querying AnkiDroid (multi-card session)', async () => {
+    // sessionManager populates the cache once via loadDueCards at session
+    // start, then walks it via peekNextCard. Re-querying inside the tool
+    // handler used to live here but was removed — it added latency that
+    // raced Gemini's toolCallCancellation timeout. This test pins the new
+    // behavior: three answers in a row, no getDueCards call, session_complete
+    // when peekNextCard returns null.
     const cardA = { cardId: 1, cardOrd: 0, front: 'A', back: 'a', deckName: 'Aws Exam SA' };
     const cardB = { cardId: 2, cardOrd: 0, front: 'B', back: 'b', deckName: 'Aws Exam SA' };
     const cardC = { cardId: 3, cardOrd: 0, front: 'C', back: 'c', deckName: 'Aws Exam SA' };
 
-    realCacheStore.getState().setCards([cardA]);
     mockGetCurrentCard
       .mockReturnValueOnce(cardA)
       .mockReturnValueOnce(cardB)
       .mockReturnValueOnce(cardC);
-    // peekNextCard reads from the store after appendCards runs, so script it
-    // to mirror what the real cache would return at each step.
     mockPeekNextCard
-      .mockReturnValueOnce(cardB) // after answering A, B is the next
-      .mockReturnValueOnce(cardC) // after answering B, C is the next
-      .mockReturnValueOnce(null); // after answering C, scheduler is empty
+      .mockReturnValueOnce(cardB)
+      .mockReturnValueOnce(cardC)
+      .mockReturnValueOnce(null);
     mockPeekRemainingAfterAdvance
       .mockReturnValueOnce(2)
       .mockReturnValueOnce(1)
       .mockReturnValueOnce(0);
 
-    // Scheduler hands us one new card per fetch, then nothing.
-    mockGetDueCardsBridge
-      .mockResolvedValueOnce([cardB])
-      .mockResolvedValueOnce([cardC])
-      .mockResolvedValueOnce([]);
-
-    // Answer A
     await (sessionManager as any).handleEvaluateAndMoveNext('c1', {
       user_response_quality: 'correct',
       feedback_text: 'ok',
     });
     expect(mockAnswerCard).toHaveBeenNthCalledWith(1, 'Aws Exam SA', 1, 0, true);
-    expect(mockGetDueCardsBridge).toHaveBeenNthCalledWith(1, 'Aws Exam SA');
     expect(useSessionStore.getState().phase).not.toBe('session_complete');
 
-    // Answer B
     await (sessionManager as any).handleEvaluateAndMoveNext('c2', {
       user_response_quality: 'incorrect',
       feedback_text: 'nope',
     });
     expect(mockAnswerCard).toHaveBeenNthCalledWith(2, 'Aws Exam SA', 2, 0, false);
-    expect(mockGetDueCardsBridge).toHaveBeenNthCalledWith(2, 'Aws Exam SA');
     expect(useSessionStore.getState().phase).not.toBe('session_complete');
 
-    // Answer C — scheduler now returns empty, session should complete
     await (sessionManager as any).handleEvaluateAndMoveNext('c3', {
       user_response_quality: 'correct',
       feedback_text: 'ok',
     });
     expect(mockAnswerCard).toHaveBeenNthCalledWith(3, 'Aws Exam SA', 3, 0, true);
-    expect(mockGetDueCardsBridge).toHaveBeenNthCalledWith(3, 'Aws Exam SA');
     expect(useSessionStore.getState().phase).toBe('session_complete');
+
+    // Regression guard: the tool handler must NEVER re-query AnkiDroid.
+    // Doing so re-introduces the toolCallCancellation race.
+    expect(mockGetDueCardsBridge).not.toHaveBeenCalled();
     expect(mockTriggerSync).toHaveBeenCalled();
   });
 });
