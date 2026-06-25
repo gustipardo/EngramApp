@@ -4,10 +4,10 @@ This guide explains how to set up **Engram** (project slug: `RealtimeApiOnMobile
 
 ## Prerequisites
 
--   **Node.js** (LTS version recommended)
--   **npm** (bundled with Node.js)
--   **Android Studio** with Android SDK and Emulator configured
--   **Git**
+- **Node.js** (LTS version recommended)
+- **npm** (bundled with Node.js)
+- **Android Studio** with Android SDK and Emulator configured
+- **Git**
 
 ## Installation Steps
 
@@ -38,11 +38,11 @@ This guide explains how to set up **Engram** (project slug: `RealtimeApiOnMobile
     ln -s ../../modules/anki-droid node_modules/anki-droid
     ```
 
-    *Note: Verify that `node_modules/expo-foreground-audio` and `node_modules/anki-droid` point to the correct directories.*
+    _Note: Verify that `node_modules/expo-foreground-audio` and `node_modules/anki-droid` point to the correct directories._
 
 4.  **AI provider key:**
 
-    The app uses Gemini Live as its single realtime backend. Add `GEMINI_API_KEY=...` to a `.env` file at the project root (read by `app.config.js` via `expo-constants`). No OpenAI key is required.
+    The app uses Gemini Live as its single realtime backend. Add `GEMINI_API_KEY=...` to a `.env` file at the project root (read by `app.config.js` via `expo-constants`).
 
 5.  **Run the Android App:**
 
@@ -54,9 +54,9 @@ This guide explains how to set up **Engram** (project slug: `RealtimeApiOnMobile
 
 ## Troubleshooting
 
--   **Dependency Conflicts:** If `npm install` fails, try deleting `node_modules` and `package-lock.json` and running `npm install --legacy-peer-deps` again.
--   **Module Resolution Errors:** If the build fails with "Unable to resolve module", ensure the symlinks in step 3 are correctly set up.
--   **Gradle Build Issues:** Clean the android build directory if you encounter strange build errors:
-    ```bash
-    cd android && ./gradlew clean && cd ..
-    ```
+- **Dependency Conflicts:** If `npm install` fails, try deleting `node_modules` and `package-lock.json` and running `npm install --legacy-peer-deps` again.
+- **Module Resolution Errors:** If the build fails with "Unable to resolve module", ensure the symlinks in step 3 are correctly set up.
+- **Gradle Build Issues:** Clean the android build directory if you encounter strange build errors:
+  ```bash
+  cd android && ./gradlew clean && cd ..
+  ```
