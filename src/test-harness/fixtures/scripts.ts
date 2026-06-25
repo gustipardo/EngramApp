@@ -1,8 +1,8 @@
-import type { AnkiCard } from '../../types/anki';
-import { awsExamSaCards } from './aws-exam-sa';
-import { anatomyMedCards } from './anatomy-med';
-import { refoldEnglishCards } from './refold-english';
-import { spanishPhrasesCards } from './spanish-phrases';
+import type { AnkiCard } from "../../types/anki";
+import { awsExamSaCards } from "./aws-exam-sa";
+import { anatomyMedCards } from "./anatomy-med";
+import { refoldEnglishCards } from "./refold-english";
+import { spanishPhrasesCards } from "./spanish-phrases";
 
 /**
  * A turn in a replay script.
@@ -25,40 +25,40 @@ import { spanishPhrasesCards } from './spanish-phrases';
  */
 export type Turn =
   | {
-      kind: 'answer';
+      kind: "answer";
       userSaid: string;
-      aiGraded: 'correct' | 'incorrect' | 'skipped';
+      aiGraded: "correct" | "incorrect" | "skipped";
       feedbackText?: string;
       expectWriteback?: { cardId: number; pass: boolean } | null;
     }
   | {
-      kind: 'override';
+      kind: "override";
       userSaid: string;
-      to: 'correct' | 'incorrect';
+      to: "correct" | "incorrect";
       expectWriteback?: { cardId: number; pass: boolean } | null;
-      expectStatus?: 'success' | 'no_change';
+      expectStatus?: "success" | "no_change";
     }
   | {
-      kind: 'endRequested';
+      kind: "endRequested";
       userSaid: string;
     }
   | {
-      kind: 'silentGrade';
+      kind: "silentGrade";
       userSaid: string;
       /** What the AI's audio claimed. Documentation only — never grades. */
       aiSaid: string;
     }
   | {
-      kind: 'toolCallNoAudio';
+      kind: "toolCallNoAudio";
       userSaid: string;
-      aiGraded: 'correct' | 'incorrect' | 'skipped';
+      aiGraded: "correct" | "incorrect" | "skipped";
       feedbackText?: string;
     }
   | {
       /** Synthetic — fires `webrtcManager.onConnectionDropped` to drive
        *  the reconnect path. No user transcript, no tool call. The
        *  runner awaits the reconnect flow before the next turn. */
-      kind: 'connectionDropped';
+      kind: "connectionDropped";
       /** Optional: simulate the reconnect() call returning false.
        *  Default: reconnect succeeds. */
       reconnectFails?: boolean;
@@ -76,25 +76,25 @@ export interface Fixture {
 // ---------------------------------------------------------------------------
 
 export const happyPath: Fixture = {
-  name: 'happy-path-all-correct',
+  name: "happy-path-all-correct",
   cards: awsExamSaCards.slice(0, 3),
   turns: [
     {
-      kind: 'answer',
-      userSaid: 'subnet level',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "subnet level",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'automated backups of EBS snapshots',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "automated backups of EBS snapshots",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[1].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'only with NLB and elastic IPs',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "only with NLB and elastic IPs",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[2].cardId, pass: true },
     },
   ],
@@ -102,31 +102,36 @@ export const happyPath: Fixture = {
 };
 
 export const mixedResults: Fixture = {
-  name: 'mixed-correct-incorrect-skip',
+  name: "mixed-correct-incorrect-skip",
   cards: awsExamSaCards.slice(0, 4),
   turns: [
     {
-      kind: 'answer',
-      userSaid: 'subnet level',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "subnet level",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'I have no idea',
-      aiGraded: 'incorrect',
+      kind: "answer",
+      userSaid: "I have no idea",
+      aiGraded: "incorrect",
       expectWriteback: { cardId: awsExamSaCards[1].cardId, pass: false },
     },
     {
-      kind: 'answer',
-      userSaid: 'skip',
-      aiGraded: 'skipped',
-      expectWriteback: null,
+      kind: "answer",
+      userSaid: "skip",
+      aiGraded: "skipped",
+      // A skip writes back as "Again" (pass=false) to advance the AnkiDroid
+      // scheduler head — there is no bury API and the cache is head-only, so
+      // not writing leaves the same card as the head and the session stalls /
+      // falsely completes (BUG 10 skip-path, fixed 2026-06-25). The skip is
+      // still excluded from correct/incorrect stats (see expectedFinalStats).
+      expectWriteback: { cardId: awsExamSaCards[2].cardId, pass: false },
     },
     {
-      kind: 'answer',
-      userSaid: 'a threat detection service',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "a threat detection service",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[3].cardId, pass: true },
     },
   ],
@@ -139,26 +144,26 @@ export const mixedResults: Fixture = {
  * Expects override_evaluation to flip + write back ease=4 (pass).
  */
 export const overrideIncorrectToCorrect: Fixture = {
-  name: 'override-incorrect-to-correct',
+  name: "override-incorrect-to-correct",
   cards: awsExamSaCards.slice(0, 2),
   turns: [
     {
-      kind: 'answer',
-      userSaid: 'wrong-sounding answer',
-      aiGraded: 'incorrect',
+      kind: "answer",
+      userSaid: "wrong-sounding answer",
+      aiGraded: "incorrect",
       expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: false },
     },
     {
-      kind: 'override',
-      userSaid: 'actually that was correct, mark it correct',
-      to: 'correct',
+      kind: "override",
+      userSaid: "actually that was correct, mark it correct",
+      to: "correct",
       expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
-      expectStatus: 'success',
+      expectStatus: "success",
     },
     {
-      kind: 'answer',
-      userSaid: 'EBS snapshot backups',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "EBS snapshot backups",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[1].cardId, pass: true },
     },
   ],
@@ -171,26 +176,26 @@ export const overrideIncorrectToCorrect: Fixture = {
  * Tests the new bidirectional override.
  */
 export const overrideCorrectToIncorrect: Fixture = {
-  name: 'override-correct-to-incorrect',
+  name: "override-correct-to-incorrect",
   cards: awsExamSaCards.slice(0, 2),
   turns: [
     {
-      kind: 'answer',
-      userSaid: 'subnet level',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "subnet level",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
     },
     {
-      kind: 'override',
-      userSaid: 'actually I was wrong, mark it incorrect',
-      to: 'incorrect',
+      kind: "override",
+      userSaid: "actually I was wrong, mark it incorrect",
+      to: "incorrect",
       expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: false },
-      expectStatus: 'success',
+      expectStatus: "success",
     },
     {
-      kind: 'answer',
-      userSaid: 'EBS snapshot backups',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "EBS snapshot backups",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[1].cardId, pass: true },
     },
   ],
@@ -198,16 +203,16 @@ export const overrideCorrectToIncorrect: Fixture = {
 };
 
 export const overrideNoChange: Fixture = {
-  name: 'override-with-nothing-to-flip',
+  name: "override-with-nothing-to-flip",
   cards: awsExamSaCards.slice(0, 1),
   turns: [
     // Right out of the gate, user calls override before any answer recorded.
     {
-      kind: 'override',
-      userSaid: 'mark the previous one correct',
-      to: 'correct',
+      kind: "override",
+      userSaid: "mark the previous one correct",
+      to: "correct",
       expectWriteback: null,
-      expectStatus: 'no_change',
+      expectStatus: "no_change",
     },
   ],
 };
@@ -220,12 +225,12 @@ export const overrideNoChange: Fixture = {
  * layer (the AI-behavior side is the Layer 3 catchment).
  */
 export const silentGradeNoToolCall: Fixture = {
-  name: 'silent-grade-no-tool-call',
+  name: "silent-grade-no-tool-call",
   cards: awsExamSaCards.slice(0, 2),
   turns: [
     {
-      kind: 'silentGrade',
-      userSaid: 'subnet level',
+      kind: "silentGrade",
+      userSaid: "subnet level",
       aiSaid: '"Correct! Moving on…" — but never fires evaluate_and_move_next',
     },
   ],
@@ -237,18 +242,18 @@ export const silentGradeNoToolCall: Fixture = {
  * graded card.
  */
 export const silentGradeThenRealGrade: Fixture = {
-  name: 'silent-grade-then-real-grade',
+  name: "silent-grade-then-real-grade",
   cards: awsExamSaCards.slice(0, 2),
   turns: [
     {
-      kind: 'silentGrade',
-      userSaid: 'subnet level',
-      aiSaid: 'mumbles ambiguously',
+      kind: "silentGrade",
+      userSaid: "subnet level",
+      aiSaid: "mumbles ambiguously",
     },
     {
-      kind: 'answer',
-      userSaid: 'subnet level',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "subnet level",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
     },
   ],
@@ -263,13 +268,13 @@ export const silentGradeThenRealGrade: Fixture = {
  * and forces an intentional update.
  */
 export const toolCallNoAudio: Fixture = {
-  name: 'tool-call-no-audio-stuck',
+  name: "tool-call-no-audio-stuck",
   cards: awsExamSaCards.slice(0, 2),
   turns: [
     {
-      kind: 'toolCallNoAudio',
-      userSaid: 'subnet level',
-      aiGraded: 'correct',
+      kind: "toolCallNoAudio",
+      userSaid: "subnet level",
+      aiGraded: "correct",
     },
   ],
 };
@@ -285,20 +290,20 @@ export const toolCallNoAudio: Fixture = {
  * The runner verifies the phase + foreground-service cleanup.
  */
 export const endOfDeck: Fixture = {
-  name: 'end-of-deck',
+  name: "end-of-deck",
   cards: awsExamSaCards.slice(0, 2),
   turns: [
     {
-      kind: 'answer',
-      userSaid: 'subnet level',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "subnet level",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
     },
     {
       // Last card answered → next card is null → session_complete.
-      kind: 'answer',
-      userSaid: 'EBS snapshot backups',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "EBS snapshot backups",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[1].cardId, pass: true },
     },
   ],
@@ -313,18 +318,18 @@ export const endOfDeck: Fixture = {
  *   - The remaining cards were NOT written (no phantom grade)
  */
 export const endSessionToolMidDeck: Fixture = {
-  name: 'end-session-tool-mid-deck',
+  name: "end-session-tool-mid-deck",
   cards: awsExamSaCards.slice(0, 3),
   turns: [
     {
-      kind: 'answer',
-      userSaid: 'subnet level',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "subnet level",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
     },
     {
       // User says "I'm done" → AI calls end_session
-      kind: 'endRequested',
+      kind: "endRequested",
       userSaid: "I'm done for today",
     },
     // The remaining card (awsExamSaCards[1], awsExamSaCards[2]) must NOT
@@ -346,26 +351,26 @@ export const endSessionToolMidDeck: Fixture = {
  * the start).
  */
 export const reconnectMidSession: Fixture = {
-  name: 'reconnect-mid-session',
+  name: "reconnect-mid-session",
   cards: awsExamSaCards.slice(0, 2),
   turns: [
     {
-      kind: 'answer',
-      userSaid: 'subnet level',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "subnet level",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
     },
     {
-      kind: 'connectionDropped',
+      kind: "connectionDropped",
       // Synthetic event — no transcript. The runner fires onConnectionDropped.
     },
     // After reconnect, the session should be back to a usable state.
     // The runner fires one more "post-reconnect answer" to verify the
     // session is fully functional.
     {
-      kind: 'answer',
-      userSaid: 'EBS snapshot backups',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "EBS snapshot backups",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[1].cardId, pass: true },
     },
   ],
@@ -379,17 +384,17 @@ export const reconnectMidSession: Fixture = {
  *   - The recovery path doesn't keep retrying in the background
  */
 export const reconnectFailure: Fixture = {
-  name: 'reconnect-failure',
+  name: "reconnect-failure",
   cards: awsExamSaCards.slice(0, 2),
   turns: [
     {
-      kind: 'answer',
-      userSaid: 'subnet level',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "subnet level",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
     },
     {
-      kind: 'connectionDropped',
+      kind: "connectionDropped",
     },
   ],
 };
@@ -405,25 +410,25 @@ export const reconnectFailure: Fixture = {
  * 3 updateForegroundNotification calls happened with the right counts.
  */
 export const notificationLifecycle: Fixture = {
-  name: 'notification-lifecycle',
+  name: "notification-lifecycle",
   cards: awsExamSaCards.slice(0, 3),
   turns: [
     {
-      kind: 'answer',
-      userSaid: 'subnet level',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "subnet level",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'EBS snapshot backups',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "EBS snapshot backups",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[1].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'NLB and elastic IPs',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "NLB and elastic IPs",
+      aiGraded: "correct",
       expectWriteback: { cardId: awsExamSaCards[2].cardId, pass: true },
     },
   ],
@@ -438,12 +443,12 @@ export const notificationLifecycle: Fixture = {
  * Medical student studying physiology — answers all 6 cards confidently.
  */
 export const anatomyAllCorrect: Fixture = {
-  name: 'anatomy-all-correct',
+  name: "anatomy-all-correct",
   cards: anatomyMedCards,
   turns: anatomyMedCards.map((card, i) => ({
-    kind: 'answer' as const,
-    userSaid: card.back.split(/[.;]/)[0].toLowerCase(),  // first sentence, lowercased
-    aiGraded: 'correct' as const,
+    kind: "answer" as const,
+    userSaid: card.back.split(/[.;]/)[0].toLowerCase(), // first sentence, lowercased
+    aiGraded: "correct" as const,
     expectWriteback: { cardId: card.cardId, pass: true },
   })),
   expectedFinalStats: { correct: 6, incorrect: 0 },
@@ -454,37 +459,37 @@ export const anatomyAllCorrect: Fixture = {
  * which is the densest answer in the deck).
  */
 export const anatomyMixed: Fixture = {
-  name: 'anatomy-mixed',
+  name: "anatomy-mixed",
   cards: anatomyMedCards.slice(0, 5),
   turns: [
     {
-      kind: 'answer',
-      userSaid: 'produces atp, the powerhouse',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "produces atp, the powerhouse",
+      aiGraded: "correct",
       expectWriteback: { cardId: anatomyMedCards[0].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'memory consolidation',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "memory consolidation",
+      aiGraded: "correct",
       expectWriteback: { cardId: anatomyMedCards[1].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'insulin and digestive enzymes',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "insulin and digestive enzymes",
+      aiGraded: "correct",
       expectWriteback: { cardId: anatomyMedCards[2].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'no idea',
-      aiGraded: 'incorrect',
+      kind: "answer",
+      userSaid: "no idea",
+      aiGraded: "incorrect",
       expectWriteback: { cardId: anatomyMedCards[3].cardId, pass: false },
     },
     {
-      kind: 'answer',
-      userSaid: 'the natural pacemaker',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "the natural pacemaker",
+      aiGraded: "correct",
       expectWriteback: { cardId: anatomyMedCards[4].cardId, pass: true },
     },
   ],
@@ -499,12 +504,12 @@ export const anatomyMixed: Fixture = {
  * English learner studying vocabulary — answers 6 cards correctly.
  */
 export const refoldAllCorrect: Fixture = {
-  name: 'refold-english-all-correct',
+  name: "refold-english-all-correct",
   cards: refoldEnglishCards.slice(0, 6),
   turns: refoldEnglishCards.slice(0, 6).map((card) => ({
-    kind: 'answer' as const,
-    userSaid: card.back.split(';')[0].split('\n')[0].toLowerCase(),
-    aiGraded: 'correct' as const,
+    kind: "answer" as const,
+    userSaid: card.back.split(";")[0].split("\n")[0].toLowerCase(),
+    aiGraded: "correct" as const,
     expectWriteback: { cardId: card.cardId, pass: true },
   })),
   expectedFinalStats: { correct: 6, incorrect: 0 },
@@ -516,43 +521,45 @@ export const refoldAllCorrect: Fixture = {
  * often guess phonetically then give up).
  */
 export const refoldMixed: Fixture = {
-  name: 'refold-english-mixed',
+  name: "refold-english-mixed",
   cards: refoldEnglishCards.slice(0, 6),
   turns: [
     {
-      kind: 'answer',
-      userSaid: 'to understand, to hold firmly',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "to understand, to hold firmly",
+      aiGraded: "correct",
       expectWriteback: { cardId: refoldEnglishCards[0].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'small, slight, hard to notice',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "small, slight, hard to notice",
+      aiGraded: "correct",
       expectWriteback: { cardId: refoldEnglishCards[1].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'continue despite difficulty',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "continue despite difficulty",
+      aiGraded: "correct",
       expectWriteback: { cardId: refoldEnglishCards[2].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'i dont know',
-      aiGraded: 'skipped',
-      expectWriteback: null,
+      kind: "answer",
+      userSaid: "i dont know",
+      aiGraded: "skipped",
+      // Skip writes "Again" (pass=false) to advance the scheduler; excluded
+      // from stats. See mixedResults skip turn + BUG 10 skip-path note.
+      expectWriteback: { cardId: refoldEnglishCards[3].cardId, pass: false },
     },
     {
-      kind: 'answer',
-      userSaid: 'use to maximum advantage',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "use to maximum advantage",
+      aiGraded: "correct",
       expectWriteback: { cardId: refoldEnglishCards[4].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'random',
-      aiGraded: 'incorrect',
+      kind: "answer",
+      userSaid: "random",
+      aiGraded: "incorrect",
       expectWriteback: { cardId: refoldEnglishCards[5].cardId, pass: false },
     },
   ],
@@ -570,12 +577,12 @@ export const refoldMixed: Fixture = {
  * prompt's first-line interpolation.
  */
 export const spanishAllCorrect: Fixture = {
-  name: 'spanish-all-correct',
+  name: "spanish-all-correct",
   cards: spanishPhrasesCards,
   turns: spanishPhrasesCards.map((card) => ({
-    kind: 'answer' as const,
+    kind: "answer" as const,
     userSaid: card.back.toLowerCase(),
-    aiGraded: 'correct' as const,
+    aiGraded: "correct" as const,
     expectWriteback: { cardId: card.cardId, pass: true },
   })),
   expectedFinalStats: { correct: 7, incorrect: 0 },
@@ -586,37 +593,37 @@ export const spanishAllCorrect: Fixture = {
  * because it has commas and accent marks that prompt grading can stumble on).
  */
 export const spanishMixed: Fixture = {
-  name: 'spanish-mixed',
+  name: "spanish-mixed",
   cards: spanishPhrasesCards.slice(0, 5),
   turns: [
     {
-      kind: 'answer',
-      userSaid: 'what is your name',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "what is your name",
+      aiGraded: "correct",
       expectWriteback: { cardId: spanishPhrasesCards[0].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'how old are you',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "how old are you",
+      aiGraded: "correct",
       expectWriteback: { cardId: spanishPhrasesCards[1].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'where are you from',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "where are you from",
+      aiGraded: "correct",
       expectWriteback: { cardId: spanishPhrasesCards[2].cardId, pass: true },
     },
     {
-      kind: 'answer',
-      userSaid: 'the time',
-      aiGraded: 'incorrect',  // expected "what time is it"
+      kind: "answer",
+      userSaid: "the time",
+      aiGraded: "incorrect", // expected "what time is it"
       expectWriteback: { cardId: spanishPhrasesCards[3].cardId, pass: false },
     },
     {
-      kind: 'answer',
-      userSaid: 'can you repeat please',
-      aiGraded: 'correct',
+      kind: "answer",
+      userSaid: "can you repeat please",
+      aiGraded: "correct",
       expectWriteback: { cardId: spanishPhrasesCards[4].cardId, pass: true },
     },
   ],

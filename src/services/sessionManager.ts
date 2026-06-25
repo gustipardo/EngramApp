@@ -889,47 +889,68 @@ class SessionManager {
     // the refill may return the same noteId (AnkiDroid hadn't reshuffled
     // yet, user sees the same card briefly), but the session does not
     // lock up.
-    if (user_response_quality !== "skipped") {
+    // BUG 10 (skip-path variant): the write-back + refill below MUST run for a
+    // skipped card too. Previously this whole block was guarded by
+    // `user_response_quality !== "skipped"`, so on a skip `fetchAndAppendNextCard`
+    // never ran. With the BUG 5 v3b refill-from-scheduler cache (current card +
+    // at most a 1-card lookahead), `peekNextCard()` then returned undefined →
+    // the tool result carried `next_card: null` → the session falsely declared
+    // `no_more_cards` and ended, even with cards still due. Reproduced on-device
+    // 2026-06-25 (refold-english-mixed: session ended on the card-3 skip while
+    // `remaining: 8`).
+    //
+    // A skip now advances exactly like a graded answer; it only differs in that
+    // it does not touch the correct/incorrect stats or play the feedback chime.
+    const isSkip = user_response_quality === "skipped";
+    if (!isSkip) {
       recordAnswer(user_response_quality as "correct" | "incorrect");
       // Fire the SFX in the same tick as recordAnswer — that's the action
       // that flips `lastEvaluation`, which makes the on-screen banner
       // appear. The chime lands with the banner and fills the silent gap
       // before the tutor's spoken feedback starts (~1–2 s later).
       sfxPlayer.play(user_response_quality as "correct" | "incorrect");
-      transitionTo("evaluating", "tool_called");
+    }
+    transitionTo("evaluating", "tool_called");
 
-      const { selectedDeck: deckForAnswer } = useSettingsStore.getState();
-      if (answeredCardId != null && answeredCardOrd != null && deckForAnswer) {
-        this.lastAnsweredCardId = answeredCardId;
-        this.lastAnsweredCardOrd = answeredCardOrd;
-        const pass = user_response_quality === "correct";
-        sessionLog.event("AnkiDroid", "write-back + refill", {
-          cardId: answeredCardId,
-          ord: answeredCardOrd,
-          pass,
-        });
-        const ANSWER_REFILL_TIMEOUT_MS = 500;
-        await Promise.race([
-          (async () => {
-            try {
-              await ankiBridge.answerCard(
-                deckForAnswer,
-                answeredCardId,
-                answeredCardOrd,
-                pass,
-              );
-            } catch (err) {
-              sessionLog.warn("AnkiDroid", "write-back error (non-fatal)", {
-                error: String(err),
-              });
-            }
-            await fetchAndAppendNextCard(deckForAnswer);
-          })(),
-          new Promise<void>((resolve) =>
-            setTimeout(resolve, ANSWER_REFILL_TIMEOUT_MS),
-          ),
-        ]);
-      }
+    const { selectedDeck: deckForAnswer } = useSettingsStore.getState();
+    if (answeredCardId != null && answeredCardOrd != null && deckForAnswer) {
+      this.lastAnsweredCardId = answeredCardId;
+      this.lastAnsweredCardOrd = answeredCardOrd;
+      // A skip still has to advance the AnkiDroid scheduler head, otherwise the
+      // re-query inside fetchAndAppendNextCard returns the SAME card (the head
+      // only moves once a card is answered or buried) and the session loops on
+      // it. The anki-droid module exposes no bury API, so a skip is written back
+      // as "Again" (ease=1, i.e. pass=false): it is NOT counted into the
+      // correct/incorrect stats, but it is rescheduled to reappear later — the
+      // right behaviour for "I don't know this one, move on".
+      const pass = user_response_quality === "correct";
+      sessionLog.event("AnkiDroid", "write-back + refill", {
+        cardId: answeredCardId,
+        ord: answeredCardOrd,
+        pass,
+        skip: isSkip,
+      });
+      const ANSWER_REFILL_TIMEOUT_MS = 500;
+      await Promise.race([
+        (async () => {
+          try {
+            await ankiBridge.answerCard(
+              deckForAnswer,
+              answeredCardId,
+              answeredCardOrd,
+              pass,
+            );
+          } catch (err) {
+            sessionLog.warn("AnkiDroid", "write-back error (non-fatal)", {
+              error: String(err),
+            });
+          }
+          await fetchAndAppendNextCard(deckForAnswer);
+        })(),
+        new Promise<void>((resolve) =>
+          setTimeout(resolve, ANSWER_REFILL_TIMEOUT_MS),
+        ),
+      ]);
     }
 
     // Peek at next card from the existing cache WITHOUT advancing — the

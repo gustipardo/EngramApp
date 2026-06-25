@@ -14,19 +14,19 @@
  *     the card pointer.
  */
 
-import { mockGeminiManager } from '../mockGeminiManager';
-import { deckSimulator } from '../deckSimulator';
+import { mockGeminiManager } from "../mockGeminiManager";
+import { deckSimulator } from "../deckSimulator";
 
 // ---------------------------------------------------------------------------
 // Module mocks — must be at the top, jest hoists them.
 // ---------------------------------------------------------------------------
 
-jest.mock('expo-foreground-audio', () => ({
+jest.mock("expo-foreground-audio", () => ({
   __esModule: true,
   default: { addListener: jest.fn().mockReturnValue({ remove: jest.fn() }) },
 }));
 
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock("@react-native-async-storage/async-storage", () => ({
   __esModule: true,
   default: {
     setItem: jest.fn().mockResolvedValue(undefined),
@@ -35,13 +35,13 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
-jest.mock('../../services/realtimeManager', () => ({
-  realtimeManager: require('../mockGeminiManager').mockGeminiManager,
+jest.mock("../../services/realtimeManager", () => ({
+  realtimeManager: require("../mockGeminiManager").mockGeminiManager,
 }));
 
 const mockAnswerCard = jest.fn().mockResolvedValue(true);
 const mockTriggerSync = jest.fn().mockResolvedValue(undefined);
-jest.mock('../../native/ankiBridge', () => ({
+jest.mock("../../native/ankiBridge", () => ({
   ankiBridge: {
     answerCard: (...a: any[]) => mockAnswerCard(...a),
     triggerSync: (...a: any[]) => mockTriggerSync(...a),
@@ -50,8 +50,8 @@ jest.mock('../../native/ankiBridge', () => ({
 
 // cardLoader functions delegate to the deckSimulator so card state stays
 // consistent across the session.
-jest.mock('../../services/cardLoader', () => {
-  const { deckSimulator } = require('../deckSimulator');
+jest.mock("../../services/cardLoader", () => {
+  const { deckSimulator } = require("../deckSimulator");
   return {
     loadDueCards: jest.fn(async (_deckName: string) => deckSimulator.cards),
     getCurrentCard: jest.fn(() => deckSimulator.getCurrent()),
@@ -60,14 +60,18 @@ jest.mock('../../services/cardLoader', () => {
       return deckSimulator.getCurrent();
     }),
     peekNextCard: jest.fn(() => deckSimulator.peekNext()),
-    peekRemainingAfterAdvance: jest.fn(() => deckSimulator.peekRemainingAfterAdvance()),
+    peekRemainingAfterAdvance: jest.fn(() =>
+      deckSimulator.peekRemainingAfterAdvance(),
+    ),
     getRemainingCardCount: jest.fn(() => deckSimulator.remaining()),
     getTotalCardCount: jest.fn(() => deckSimulator.total()),
     clearCards: jest.fn(),
     advanceCacheIndex: jest.fn(() => deckSimulator.advance()),
     // BUG 5 v3b: mimic the refill — peek what would be the new head and
     // route via deckSimulator so it matches what peekNextCard returns.
-    fetchAndAppendNextCard: jest.fn(async (_deckName: string) => deckSimulator.peekNext() ?? null),
+    fetchAndAppendNextCard: jest.fn(
+      async (_deckName: string) => deckSimulator.peekNext() ?? null,
+    ),
   };
 });
 
@@ -84,7 +88,7 @@ const mockFgClearPauseFlag = jest.fn();
 const mockFgIsRunning = jest.fn().mockReturnValue(false);
 const mockFgWasPaused = jest.fn().mockReturnValue(false);
 
-jest.mock('../../services/foregroundAudioService', () => ({
+jest.mock("../../services/foregroundAudioService", () => ({
   startForegroundService: (...a: any[]) => mockFgStart(...a),
   stopForegroundService: (...a: any[]) => mockFgStop(...a),
   updateForegroundNotification: (...a: any[]) => mockFgUpdate(...a),
@@ -95,7 +99,7 @@ jest.mock('../../services/foregroundAudioService', () => ({
   wasPausedByAudioFocusLoss: (...a: any[]) => mockFgWasPaused(...a),
 }));
 
-jest.mock('../../services/analytics', () => ({
+jest.mock("../../services/analytics", () => ({
   AnalyticsEvents: {
     sessionStarted: jest.fn(),
     sessionCompleted: jest.fn(),
@@ -108,11 +112,11 @@ jest.mock('../../services/analytics', () => ({
 // Imports that need the mocks above
 // ---------------------------------------------------------------------------
 
-import { sessionManager } from '../../services/sessionManager';
-import { useSessionStore } from '../../stores/useSessionStore';
-import { useCardCacheStore } from '../../stores/useCardCacheStore';
-import { useConnectionStore } from '../../stores/useConnectionStore';
-import { runFixture } from '../scriptRunner';
+import { sessionManager } from "../../services/sessionManager";
+import { useSessionStore } from "../../stores/useSessionStore";
+import { useCardCacheStore } from "../../stores/useCardCacheStore";
+import { useConnectionStore } from "../../stores/useConnectionStore";
+import { runFixture } from "../scriptRunner";
 import {
   happyPath,
   mixedResults,
@@ -133,7 +137,7 @@ import {
   refoldMixed,
   spanishAllCorrect,
   spanishMixed,
-} from '../fixtures/scripts';
+} from "../fixtures/scripts";
 
 const ctx = {
   mockMgr: mockGeminiManager,
@@ -145,9 +149,9 @@ const ctx = {
   useConnectionStore,
 };
 
-describe('Layer 2 — replay harness', () => {
-  describe('happy path: 3 cards all correct', () => {
-    it('writes pass=true for every card and stats are 3-0', async () => {
+describe("Layer 2 — replay harness", () => {
+  describe("happy path: 3 cards all correct", () => {
+    it("writes pass=true for every card and stats are 3-0", async () => {
       const result = await runFixture(happyPath, ctx);
       expect(result.ankiWrites).toEqual([
         { cardId: 1001, pass: true },
@@ -158,75 +162,78 @@ describe('Layer 2 — replay harness', () => {
     });
   });
 
-  describe('mixed results: correct + incorrect + skip + correct', () => {
-    it('writes per-turn correctly and skipped does NOT trigger a write', async () => {
+  describe("mixed results: correct + incorrect + skip + correct", () => {
+    it('writes per-turn correctly; skipped writes "Again" (pass=false) to advance the scheduler', async () => {
       const result = await runFixture(mixedResults, ctx);
       expect(result.ankiWrites).toEqual([
         { cardId: 1001, pass: true },
         { cardId: 1002, pass: false },
-        // no write for the skipped card
+        // BUG 10 skip-path fix: the skipped card (1003) IS written back as
+        // Again (pass=false) so the head-only AnkiDroid scheduler advances.
+        // It is still excluded from correct/incorrect stats below.
+        { cardId: 1003, pass: false },
         { cardId: 1004, pass: true },
       ]);
       expect(result.finalStats).toEqual({ correct: 2, incorrect: 1 });
     });
 
-    it('records exactly one tool result per turn', async () => {
+    it("records exactly one tool result per turn", async () => {
       const result = await runFixture(mixedResults, ctx);
       expect(result.toolResults).toHaveLength(4);
     });
   });
 
-  describe('override incorrect → correct', () => {
-    it('writes the original incorrect, then a corrective pass=true write', async () => {
+  describe("override incorrect → correct", () => {
+    it("writes the original incorrect, then a corrective pass=true write", async () => {
       const result = await runFixture(overrideIncorrectToCorrect, ctx);
       expect(result.ankiWrites).toEqual([
         { cardId: 1001, pass: false }, // initial wrong
-        { cardId: 1001, pass: true },  // override flips it
-        { cardId: 1002, pass: true },  // next card answered correctly
+        { cardId: 1001, pass: true }, // override flips it
+        { cardId: 1002, pass: true }, // next card answered correctly
       ]);
       expect(result.finalStats).toEqual({ correct: 2, incorrect: 0 });
     });
 
-    it('override tool-result reports success status', async () => {
+    it("override tool-result reports success status", async () => {
       const result = await runFixture(overrideIncorrectToCorrect, ctx);
       const overrideToolResult = result.perTurn[1].toolResultAfter;
-      expect(overrideToolResult?.result?.status).toBe('success');
+      expect(overrideToolResult?.result?.status).toBe("success");
     });
   });
 
-  describe('override correct → incorrect (new bidirectional behavior)', () => {
-    it('writes the original correct, then a corrective pass=false write', async () => {
+  describe("override correct → incorrect (new bidirectional behavior)", () => {
+    it("writes the original correct, then a corrective pass=false write", async () => {
       const result = await runFixture(overrideCorrectToIncorrect, ctx);
       expect(result.ankiWrites).toEqual([
-        { cardId: 1001, pass: true },  // initial correct
+        { cardId: 1001, pass: true }, // initial correct
         { cardId: 1001, pass: false }, // override flips it
-        { cardId: 1002, pass: true },  // next card answered correctly
+        { cardId: 1002, pass: true }, // next card answered correctly
       ]);
       expect(result.finalStats).toEqual({ correct: 1, incorrect: 1 });
     });
   });
 
-  describe('override with nothing to flip', () => {
-    it('emits no_change and writes nothing to AnkiDroid', async () => {
+  describe("override with nothing to flip", () => {
+    it("emits no_change and writes nothing to AnkiDroid", async () => {
       const result = await runFixture(overrideNoChange, ctx);
       expect(result.ankiWrites).toEqual([]);
       const overrideToolResult = result.perTurn[0].toolResultAfter;
-      expect(overrideToolResult?.result?.status).toBe('no_change');
+      expect(overrideToolResult?.result?.status).toBe("no_change");
     });
   });
 
-  describe('silent grade — AI verbalises a verdict but never tool-calls', () => {
-    it('does NOT write to AnkiDroid when no tool call fires', async () => {
+  describe("silent grade — AI verbalises a verdict but never tool-calls", () => {
+    it("does NOT write to AnkiDroid when no tool call fires", async () => {
       const result = await runFixture(silentGradeNoToolCall, ctx);
       expect(result.ankiWrites).toEqual([]);
     });
 
-    it('does NOT change stats — silent verdict carries no weight', async () => {
+    it("does NOT change stats — silent verdict carries no weight", async () => {
       const result = await runFixture(silentGradeNoToolCall, ctx);
       expect(result.finalStats).toEqual({ correct: 0, incorrect: 0 });
     });
 
-    it('does NOT set lastEvaluation — popup state stays cleared', async () => {
+    it("does NOT set lastEvaluation — popup state stays cleared", async () => {
       // The verdict popup is bound to lastEvaluation. If it fires from
       // anywhere except recordAnswer (called only by handleEvaluateAndMoveNext),
       // the user sees a green/red flash for a verdict the system never
@@ -236,12 +243,12 @@ describe('Layer 2 — replay harness', () => {
       expect(result.perTurn[0].lastEvaluationAfter).toBeNull();
     });
 
-    it('does NOT advance the card — UI stays on the same question', async () => {
+    it("does NOT advance the card — UI stays on the same question", async () => {
       const result = await runFixture(silentGradeNoToolCall, ctx);
       expect(result.perTurn[0].cardIndexAfter).toBe(0);
     });
 
-    it('lands phase in awaiting_answer so user can retry', async () => {
+    it("lands phase in awaiting_answer so user can retry", async () => {
       // After audio.delta + response.done with no tool call, phase walks:
       //   awaiting_answer → evaluating → giving_feedback → awaiting_answer.
       // No advance because handleEvaluate never ran — but phase still
@@ -249,15 +256,13 @@ describe('Layer 2 — replay harness', () => {
       // (2026-05-21), the recovery timer would also force phase exit
       // if audio.delta hadn't arrived.
       const result = await runFixture(silentGradeNoToolCall, ctx);
-      expect(result.perTurn[0].phaseAfter).toBe('awaiting_answer');
+      expect(result.perTurn[0].phaseAfter).toBe("awaiting_answer");
     });
 
-    it('recovers on a real grade after a silent one', async () => {
+    it("recovers on a real grade after a silent one", async () => {
       const result = await runFixture(silentGradeThenRealGrade, ctx);
       // Only the second turn (real grade) writes.
-      expect(result.ankiWrites).toEqual([
-        { cardId: 1001, pass: true },
-      ]);
+      expect(result.ankiWrites).toEqual([{ cardId: 1001, pass: true }]);
       expect(result.finalStats).toEqual({ correct: 1, incorrect: 0 });
       // Card advanced once on the real grade.
       expect(result.perTurn[0].cardIndexAfter).toBe(0);
@@ -265,53 +270,51 @@ describe('Layer 2 — replay harness', () => {
     });
   });
 
-  describe('tool call without follow-up audio — post-BUG-4-fix contract', () => {
+  describe("tool call without follow-up audio — post-BUG-4-fix contract", () => {
     // After the BUG 4 fix on 2026-05-21, advance is eager (happens inside
     // handleEvaluateAndMoveNext, right after sendToolResult) — no longer
     // gated on the AI's feedback turn finishing.  The recovery timer
     // (sessionManager.startEvaluatingRecovery, 8 s) handles the phase
     // unstuck if the AI never speaks audio.
-    it('writes the answer to AnkiDroid (the tool result side works)', async () => {
+    it("writes the answer to AnkiDroid (the tool result side works)", async () => {
       const result = await runFixture(toolCallNoAudio, ctx);
-      expect(result.ankiWrites).toEqual([
-        { cardId: 1001, pass: true },
-      ]);
+      expect(result.ankiWrites).toEqual([{ cardId: 1001, pass: true }]);
     });
 
-    it('updates stats — recordAnswer ran from the tool handler', async () => {
+    it("updates stats — recordAnswer ran from the tool handler", async () => {
       const result = await runFixture(toolCallNoAudio, ctx);
       expect(result.finalStats).toEqual({ correct: 1, incorrect: 0 });
     });
 
-    it('advances the card index eagerly (post-BUG-4 fix)', async () => {
+    it("advances the card index eagerly (post-BUG-4 fix)", async () => {
       // Pre-fix: stayed at 0 because advance was gated on response.done.
       // Post-fix: handleEvaluateAndMoveNext advances synchronously.
       const result = await runFixture(toolCallNoAudio, ctx);
       expect(result.perTurn[0].cardIndexAfter).toBe(1);
     });
 
-    it('phase is stuck in evaluating until recovery timer fires', async () => {
+    it("phase is stuck in evaluating until recovery timer fires", async () => {
       // The replay harness doesn't advance fake timers, so the recovery
       // timer (8 s) hasn't fired yet at perTurn snapshot time. Phase
       // remains in `evaluating` for now. A future test can use
       // jest.useFakeTimers() + advanceTimersByTime to verify the
       // recovery transition.
       const result = await runFixture(toolCallNoAudio, ctx);
-      expect(result.perTurn[0].phaseAfter).toBe('evaluating');
+      expect(result.perTurn[0].phaseAfter).toBe("evaluating");
     });
   });
 
-  describe('phase + advance invariants — happy path', () => {
-    it('every non-final answer turn ends in awaiting_answer', async () => {
+  describe("phase + advance invariants — happy path", () => {
+    it("every non-final answer turn ends in awaiting_answer", async () => {
       const result = await runFixture(happyPath, ctx);
       // 3 cards. Turn 0 and 1 are non-final; turn 2 is the last and ends
       // in session_complete.
-      expect(result.perTurn[0].phaseAfter).toBe('awaiting_answer');
-      expect(result.perTurn[1].phaseAfter).toBe('awaiting_answer');
-      expect(result.perTurn[2].phaseAfter).toBe('session_complete');
+      expect(result.perTurn[0].phaseAfter).toBe("awaiting_answer");
+      expect(result.perTurn[1].phaseAfter).toBe("awaiting_answer");
+      expect(result.perTurn[2].phaseAfter).toBe("session_complete");
     });
 
-    it('card index advances by exactly 1 after each non-final answer', async () => {
+    it("card index advances by exactly 1 after each non-final answer", async () => {
       const result = await runFixture(happyPath, ctx);
       // Index starts at 0. After turn 0 advance → 1, after turn 1 → 2,
       // after turn 2 (session_complete branch) → still advances → 3 (out of range).
@@ -319,34 +322,42 @@ describe('Layer 2 — replay harness', () => {
       expect(result.perTurn[1].cardIndexAfter).toBe(2);
     });
 
-    it('lastEvaluation reflects the most recent grade for the popup', async () => {
+    it("lastEvaluation reflects the most recent grade for the popup", async () => {
       const result = await runFixture(mixedResults, ctx);
       // mixedResults: correct, incorrect, skipped, correct.
-      expect(result.perTurn[0].lastEvaluationAfter).toBe('correct');
-      expect(result.perTurn[1].lastEvaluationAfter).toBe('incorrect');
+      expect(result.perTurn[0].lastEvaluationAfter).toBe("correct");
+      expect(result.perTurn[1].lastEvaluationAfter).toBe("incorrect");
       // Skipped does NOT change lastEvaluation — stays at the previous value.
-      expect(result.perTurn[2].lastEvaluationAfter).toBe('incorrect');
-      expect(result.perTurn[3].lastEvaluationAfter).toBe('correct');
+      expect(result.perTurn[2].lastEvaluationAfter).toBe("incorrect");
+      expect(result.perTurn[3].lastEvaluationAfter).toBe("correct");
     });
   });
 
-  describe('cross-cutting invariants', () => {
-    it('never writes for a turn graded "skipped"', async () => {
+  describe("cross-cutting invariants", () => {
+    it('writes "Again" (pass=false) for a turn graded "skipped" to advance the scheduler', async () => {
       const result = await runFixture(mixedResults, ctx);
-      // Find the skipped turn diagnostics — writes should be unchanged
-      // before vs after that turn.
+      // BUG 10 skip-path: a skip must advance the head-only AnkiDroid scheduler.
+      // There is no bury API, so it writes back as Again (pass=false) — exactly
+      // one new write vs the previous turn, and that write is a fail.
       const skippedIdx = mixedResults.turns.findIndex(
-        (t) => t.kind === 'answer' && t.aiGraded === 'skipped'
+        (t) => t.kind === "answer" && t.aiGraded === "skipped",
       );
-      const writesBeforeSkip = result.perTurn[skippedIdx - 1]?.ankiWritesAfter ?? [];
+      const writesBeforeSkip =
+        result.perTurn[skippedIdx - 1]?.ankiWritesAfter ?? [];
       const writesAfterSkip = result.perTurn[skippedIdx].ankiWritesAfter;
-      expect(writesAfterSkip).toEqual(writesBeforeSkip);
+      expect(writesAfterSkip).toHaveLength(writesBeforeSkip.length + 1);
+      expect(writesAfterSkip[writesAfterSkip.length - 1].pass).toBe(false);
     });
 
-    it('every turn in a fixture matches its expectWriteback hint', async () => {
+    it("every turn in a fixture matches its expectWriteback hint", async () => {
       // Validates the fixtures themselves against the runner — a meta-test
       // that catches drift between fixture intent and harness behavior.
-      for (const fixture of [happyPath, mixedResults, overrideIncorrectToCorrect, overrideCorrectToIncorrect]) {
+      for (const fixture of [
+        happyPath,
+        mixedResults,
+        overrideIncorrectToCorrect,
+        overrideCorrectToIncorrect,
+      ]) {
         const result = await runFixture(fixture, ctx);
         let cumulativeWrites = 0;
         for (let i = 0; i < fixture.turns.length; i++) {
@@ -370,28 +381,28 @@ describe('Layer 2 — replay harness', () => {
   // Lifecycle fixtures — end-of-deck, end_session, reconnect, foreground service
   // =============================================================================
 
-  describe('end-of-deck — last card answered', () => {
+  describe("end-of-deck — last card answered", () => {
     beforeEach(() => {
       mockFgStart.mockClear();
       mockFgStop.mockClear();
       mockFgUpdate.mockClear();
     });
 
-    it('writes both cards and final phase is session_complete', async () => {
+    it("writes both cards and final phase is session_complete", async () => {
       const result = await runFixture(endOfDeck, ctx);
       expect(result.ankiWrites).toHaveLength(2);
-      expect(result.finalPhase).toBe('session_complete');
+      expect(result.finalPhase).toBe("session_complete");
       expect(result.finalStats).toEqual({ correct: 2, incorrect: 0 });
     });
 
-    it('calls stopForegroundService on session_complete', async () => {
+    it("calls stopForegroundService on session_complete", async () => {
       await runFixture(endOfDeck, ctx);
       expect(mockFgStop).toHaveBeenCalled();
     });
   });
 
-  describe('end_session tool — called mid-deck', () => {
-    it('writes only the cards answered before end_session', async () => {
+  describe("end_session tool — called mid-deck", () => {
+    it("writes only the cards answered before end_session", async () => {
       const result = await runFixture(endSessionToolMidDeck, ctx);
       // Only card 1 (the one before the end_request turn) is written.
       expect(result.ankiWrites).toHaveLength(1);
@@ -408,18 +419,18 @@ describe('Layer 2 — replay harness', () => {
       //   { status: 'ending', total_reviewed, correct, incorrect }
       const toolResults = result.toolResults;
       const endResult = toolResults.find(
-        (r) => r.result && r.result.status === 'ending',
+        (r) => r.result && r.result.status === "ending",
       );
       expect(endResult).toBeTruthy();
       expect(endResult?.result).toEqual({
-        status: 'ending',
+        status: "ending",
         total_reviewed: 1,
         correct: 1,
         incorrect: 0,
       });
     });
 
-    it('phase is awaiting_answer immediately after end_session (5s summary wait)', async () => {
+    it("phase is awaiting_answer immediately after end_session (5s summary wait)", async () => {
       // The session-complete transition happens via a 5-second setTimeout
       // AFTER the AI speaks the closing summary. The unit-test runner
       // doesn't advance fake timers (to keep the harness simple), so
@@ -427,13 +438,13 @@ describe('Layer 2 — replay harness', () => {
       // and the full transition is covered by an integration test that
       // actually runs the 5s wait.
       const result = await runFixture(endSessionToolMidDeck, ctx);
-      expect(result.finalPhase).toBe('awaiting_answer');
+      expect(result.finalPhase).toBe("awaiting_answer");
       expect(result.finalStats).toEqual({ correct: 1, incorrect: 0 });
     });
   });
 
-  describe('reconnect mid-session', () => {
-    it('fires the onConnectionDropped handler (reconnect wiring is installed)', async () => {
+  describe("reconnect mid-session", () => {
+    it("fires the onConnectionDropped handler (reconnect wiring is installed)", async () => {
       // Setup: the runner only fires the drop handler if a fixture turn
       // has kind 'connectionDropped' AND sessionManager has installed
       // the handler in installConnectionDropHandler. Verify the handler
@@ -446,14 +457,14 @@ describe('Layer 2 — replay harness', () => {
       expect(result).toBeTruthy();
     });
 
-    it('reconnects and lets the session answer the next card', async () => {
+    it("reconnects and lets the session answer the next card", async () => {
       const result = await runFixture(reconnectMidSession, ctx);
       // Both cards written — proves the post-reconnect turn is fully functional.
       expect(result.ankiWrites).toHaveLength(2);
       expect(result.finalStats).toEqual({ correct: 2, incorrect: 0 });
     });
 
-    it('does NOT double-write the already-answered card after reconnect', async () => {
+    it("does NOT double-write the already-answered card after reconnect", async () => {
       const result = await runFixture(reconnectMidSession, ctx);
       // No duplicate cardIds.
       const cardIds = result.ankiWrites.map((w) => w.cardId);
@@ -461,8 +472,8 @@ describe('Layer 2 — replay harness', () => {
     });
   });
 
-  describe('reconnect failure', () => {
-    it('attempts reconnect via the gemini manager', async () => {
+  describe("reconnect failure", () => {
+    it("attempts reconnect via the gemini manager", async () => {
       // Pin that the drop handler fires AND that reconnect() was called.
       // We can't reliably pin the intermediate "reconnecting" phase
       // because the async chain (drop handler → attemptReconnectAndResume
@@ -476,31 +487,31 @@ describe('Layer 2 — replay harness', () => {
       expect(result.ankiWrites).toHaveLength(1);
     });
 
-    it('writes the card answered before the drop', async () => {
+    it("writes the card answered before the drop", async () => {
       const result = await runFixture(reconnectFailure, ctx);
       expect(result.ankiWrites).toHaveLength(1);
       expect(result.ankiWrites[0].pass).toBe(true);
     });
   });
 
-  describe('foreground service lifecycle', () => {
+  describe("foreground service lifecycle", () => {
     beforeEach(() => {
       mockFgStart.mockClear();
       mockFgStop.mockClear();
       mockFgUpdate.mockClear();
     });
 
-    it('startForegroundService is called exactly once during a 3-card session', async () => {
+    it("startForegroundService is called exactly once during a 3-card session", async () => {
       await runFixture(notificationLifecycle, ctx);
       expect(mockFgStart).toHaveBeenCalledTimes(1);
     });
 
-    it('stopForegroundService is called on session_complete', async () => {
+    it("stopForegroundService is called on session_complete", async () => {
       await runFixture(notificationLifecycle, ctx);
       expect(mockFgStop).toHaveBeenCalled();
     });
 
-    it('updateForegroundNotification is called for each card advance', async () => {
+    it("updateForegroundNotification is called for each card advance", async () => {
       // startSession sends the first card → update on card 1 (N-of-M label).
       // After each turn advance → update again.
       // Pinning the contract: at LEAST 2 updates for a 3-card session.
@@ -508,7 +519,7 @@ describe('Layer 2 — replay harness', () => {
       expect(mockFgUpdate.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('startForegroundService is called BEFORE any updateForegroundNotification', async () => {
+    it("startForegroundService is called BEFORE any updateForegroundNotification", async () => {
       await runFixture(notificationLifecycle, ctx);
       const firstStart = mockFgStart.mock.invocationCallOrder[0] ?? 0;
       const firstUpdate = mockFgUpdate.mock.invocationCallOrder[0] ?? Infinity;
@@ -523,16 +534,16 @@ describe('Layer 2 — replay harness', () => {
   // but not AWS) gets caught.
   // =============================================================================
 
-  describe('anatomy/med-student persona', () => {
-    it('all-correct: writes pass=true for all 6 anatomy cards, stats 6-0', async () => {
+  describe("anatomy/med-student persona", () => {
+    it("all-correct: writes pass=true for all 6 anatomy cards, stats 6-0", async () => {
       const result = await runFixture(anatomyAllCorrect, ctx);
       expect(result.ankiWrites).toHaveLength(6);
       expect(result.ankiWrites.every((w) => w.pass)).toBe(true);
       expect(result.finalStats).toEqual({ correct: 6, incorrect: 0 });
-      expect(result.finalPhase).toBe('session_complete');
+      expect(result.finalPhase).toBe("session_complete");
     });
 
-    it('mixed: writes correctly per turn and skipped does NOT trigger a write', async () => {
+    it("mixed: writes correctly per turn and skipped does NOT trigger a write", async () => {
       const result = await runFixture(anatomyMixed, ctx);
       expect(result.ankiWrites).toHaveLength(5); // 5 answered, 1 skipped → no write
       expect(result.finalStats).toEqual({ correct: 4, incorrect: 1 });
@@ -542,25 +553,26 @@ describe('Layer 2 — replay harness', () => {
     });
   });
 
-  describe('refold English learner persona', () => {
-    it('all-correct: writes pass=true for all 6 vocab cards, stats 6-0', async () => {
+  describe("refold English learner persona", () => {
+    it("all-correct: writes pass=true for all 6 vocab cards, stats 6-0", async () => {
       const result = await runFixture(refoldAllCorrect, ctx);
       expect(result.ankiWrites).toHaveLength(6);
       expect(result.ankiWrites.every((w) => w.pass)).toBe(true);
       expect(result.finalStats).toEqual({ correct: 6, incorrect: 0 });
     });
 
-    it('mixed: handles correct + skipped + incorrect (language-learner pattern)', async () => {
+    it("mixed: handles correct + skipped + incorrect (language-learner pattern)", async () => {
       const result = await runFixture(refoldMixed, ctx);
-      // 6 turns total — 4 correct + 1 skipped + 1 incorrect → 5 writes
-      // (skipped does NOT write).
-      expect(result.ankiWrites).toHaveLength(5);
+      // 6 turns total — 4 correct + 1 skipped + 1 incorrect → 6 writes.
+      // The skip writes back as Again (pass=false) to advance the scheduler
+      // (BUG 10 skip-path) but is excluded from the correct/incorrect stats.
+      expect(result.ankiWrites).toHaveLength(6);
       expect(result.finalStats).toEqual({ correct: 4, incorrect: 1 });
-      // Verify exactly one wrong write.
-      expect(result.ankiWrites.filter((w) => !w.pass)).toHaveLength(1);
+      // Two non-pass writes now: the skip (Again) + the genuinely incorrect card.
+      expect(result.ankiWrites.filter((w) => !w.pass)).toHaveLength(2);
     });
 
-    it('per-persona deck name is preserved through the session (BUG 16 surface)', async () => {
+    it("per-persona deck name is preserved through the session (BUG 16 surface)", async () => {
       // The prompt builder is parameterized by deck name; pin that
       // every persona's deck name propagates through to the tool-result
       // stack so a future change can't accidentally hardcode one deck.
@@ -575,47 +587,51 @@ describe('Layer 2 — replay harness', () => {
     });
   });
 
-  describe('spanish phrases learner persona (BUG 16 — language directive)', () => {
-    it('all-correct: writes pass=true for all 7 spanish phrases, stats 7-0', async () => {
+  describe("spanish phrases learner persona (BUG 16 — language directive)", () => {
+    it("all-correct: writes pass=true for all 7 spanish phrases, stats 7-0", async () => {
       const result = await runFixture(spanishAllCorrect, ctx);
       expect(result.ankiWrites).toHaveLength(7);
       expect(result.ankiWrites.every((w) => w.pass)).toBe(true);
       expect(result.finalStats).toEqual({ correct: 7, incorrect: 0 });
     });
 
-    it('mixed: handles correct + incorrect in a spanish-questions deck', async () => {
+    it("mixed: handles correct + incorrect in a spanish-questions deck", async () => {
       const result = await runFixture(spanishMixed, ctx);
       expect(result.ankiWrites).toHaveLength(5);
       expect(result.finalStats).toEqual({ correct: 4, incorrect: 1 });
     });
   });
 
-  describe('persona cross-cutting invariants', () => {
+  describe("persona cross-cutting invariants", () => {
     // Pinning the same invariants across all 3 new personas + AWS so
     // a regression in one is immediately visible as a delta.
     it.each([
-      ['aws', happyPath, 3, { correct: 3, incorrect: 0 }],
-      ['anatomy', anatomyAllCorrect, 6, { correct: 6, incorrect: 0 }],
-      ['refold', refoldAllCorrect, 6, { correct: 6, incorrect: 0 }],
-      ['spanish', spanishAllCorrect, 7, { correct: 7, incorrect: 0 }],
+      ["aws", happyPath, 3, { correct: 3, incorrect: 0 }],
+      ["anatomy", anatomyAllCorrect, 6, { correct: 6, incorrect: 0 }],
+      ["refold", refoldAllCorrect, 6, { correct: 6, incorrect: 0 }],
+      ["spanish", spanishAllCorrect, 7, { correct: 7, incorrect: 0 }],
     ] as const)(
-      '%s all-correct: writes match the expected card count and final stats',
+      "%s all-correct: writes match the expected card count and final stats",
       async (_persona, fixture, expectedWrites, expectedStats) => {
         const result = await runFixture(fixture, ctx);
         expect(result.ankiWrites).toHaveLength(expectedWrites);
         expect(result.finalStats).toEqual(expectedStats);
         // All personas must end in session_complete when the deck is exhausted.
-        expect(result.finalPhase).toBe('session_complete');
+        expect(result.finalPhase).toBe("session_complete");
       },
     );
 
+    // expectedWrites counts ALL scheduler writes including skips-as-Again.
+    // aws (mixedResults) and refold (refoldMixed) each contain one skip, so
+    // their write count is graded-turns + 1; anatomy/spanish have no skip.
+    // Stats still exclude skips (correct/incorrect only).
     it.each([
-      ['aws', mixedResults, 3, { correct: 2, incorrect: 1 }],
-      ['anatomy', anatomyMixed, 5, { correct: 4, incorrect: 1 }],
-      ['refold', refoldMixed, 5, { correct: 4, incorrect: 1 }],
-      ['spanish', spanishMixed, 5, { correct: 4, incorrect: 1 }],
+      ["aws", mixedResults, 4, { correct: 2, incorrect: 1 }],
+      ["anatomy", anatomyMixed, 5, { correct: 4, incorrect: 1 }],
+      ["refold", refoldMixed, 6, { correct: 4, incorrect: 1 }],
+      ["spanish", spanishMixed, 5, { correct: 4, incorrect: 1 }],
     ] as const)(
-      '%s mixed: skipped never writes, stats track correct/incorrect only',
+      "%s mixed: skip writes Again (excluded from stats), stats track correct/incorrect only",
       async (_persona, fixture, expectedWrites, expectedStats) => {
         const result = await runFixture(fixture, ctx);
         expect(result.ankiWrites).toHaveLength(expectedWrites);

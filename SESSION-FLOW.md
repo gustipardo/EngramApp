@@ -459,9 +459,15 @@ Step 4 is where the trace dies. Three sub-hypotheses to discriminate via logs:
 
 ---
 
-### BUG 10 — Tutor falsely declares session complete / "this is the last card" every turn **[ROOT CAUSE CONFIRMED + FIXED 2026-05-25 (variant A); variant B still open]**
+### BUG 10 — Tutor falsely declares session complete / "this is the last card" every turn **[variant A FIXED 2026-05-25; variant C (skip-path) FIXED 2026-06-25; variant B still open]**
 
-**Status:** Variant A (deterministic "last card every turn") root cause confirmed in sesión 5 from `_debug/runs/live-resilient-20260525-150637.log` and FIXED. Variant B (intermittent false session-end after a refill timeout) still open as originally described.
+**Status:** Variant A (deterministic "last card every turn") root cause confirmed in sesión 5 from `_debug/runs/live-resilient-20260525-150637.log` and FIXED. **Variant C (skip-path, deterministic) FIXED 2026-06-25** — see below. Variant B (intermittent false session-end after a refill timeout) still open as originally described.
+
+**Variant C — skip never advanced the scheduler (deterministic), FIXED 2026-06-25:**
+
+Reproduced on-device with the persona E2E harness (`refold-english-mixed`): the session ended on the card-3 skip with `next_card: null` while `remaining: 8`. Root cause: in `handleEvaluateAndMoveNext` the entire write-back + `fetchAndAppendNextCard` block was guarded by `user_response_quality !== "skipped"`, so a skip never refilled. Under the BUG 5 v3b head-only cache, `peekNextCard()` then returned `undefined` → `next_card: null` → `no_more_cards` → false `session_complete`. Distinct from variant B (this never even _attempts_ the refill; it is not a race-timeout).
+
+Fix: a skip now runs the same write-back + refill path as a graded answer. Because the AnkiDroid scheduler head only moves once a card is answered (there is no bury API in the `anki-droid` module) and `queryDueCards` returns only the head, the skip is written back as **"Again" (ease=1, pass=false)** purely to advance the scheduler — it is excluded from the correct/incorrect stats and plays no chime. Trade-off: a skipped card is rescheduled exactly like an incorrect one (rather than left untouched). A future `bury` native function would let a skip advance without touching scheduling; tracked as follow-up. Tests: `sessionManager.test.ts` (skip writes pass=false + triggers refill + does not end the session) and the L2 replay fixtures/invariants updated to expect the skip→Again write. Verified on-device: `refold-english-mixed` now grades all 6 cards (4 correct / 1 incorrect / 1 skip) instead of dying after the skip.
 
 **Reporters:** user, sesión 4 (2026-05-24) [variant B] + sesión 5 (2026-05-25) [variant A].
 
