@@ -147,3 +147,4 @@ Firebase Cloud Functions (TypeScript, Firebase Admin SDK):
 - `TODOLIST.md` — Current P0/P1 punch list (Firebase setup, auth wiring, Play Store products, PostHog key, app rename).
 - `SETUP.md` — Developer setup guide.
 - `PLAY-STORE.md` — Google Play policy & compliance notes. Read before preparing a Play release or answering "is X allowed on Play?" (cross-app AnkiDroid module, mic foreground service, Data Safety, the `com.anonymous.*` package rename, Anki trademark).
+- `FREE-QUOTA.md` — Free trial / quota design + implementation plan (7 days OR 10 sessions, server-tracked). Read before touching `functions/src/` trial logic or `trialService.ts`. Notes the 3 gaps that make the trial non-functional today. Status: designed, not yet built.
