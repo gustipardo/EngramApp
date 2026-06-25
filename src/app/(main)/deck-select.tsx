@@ -23,10 +23,7 @@ import {
 import { useSessionStore } from "../../stores/useSessionStore";
 import { ankiBridge } from "../../native/ankiBridge";
 import { requiresPayment, requiresAuth } from "../../config/env";
-import {
-  checkTrialStatus,
-  type TrialStatus,
-} from "../../services/trialService";
+import { useTrialStore } from "../../stores/useTrialStore";
 import { signOut } from "../../services/authService";
 import { AnalyticsEvents } from "../../services/analytics";
 import type { DeckInfo } from "../../types/anki";
@@ -153,7 +150,8 @@ export default function DeckSelectScreen() {
   const [loadingState, setLoadingState] = useState<LoadingState>("loading");
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [trialStatus, setTrialStatus] = useState<TrialStatus | null>(null);
+  const trialStatus = useTrialStore((s) => s.status);
+  const refreshTrialStatus = useTrialStore((s) => s.refresh);
   // Unified deck-settings sheet (language + tutor instructions). Replaces
   // the standalone instructions modal — same surface, more obvious entry
   // point via the gear icon on each row.
@@ -199,11 +197,9 @@ export default function DeckSelectScreen() {
     useCallback(() => {
       loadDecks();
       if (requiresPayment()) {
-        checkTrialStatus()
-          .then(setTrialStatus)
-          .catch((err) => console.warn("Trial check failed:", err));
+        refreshTrialStatus();
       }
-    }, [loadDecks]),
+    }, [loadDecks, refreshTrialStatus]),
   );
 
   // Dev autostart: opt-in. Requires both a deck name (AUTO_START_DECK) AND
