@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// Cloud Firestore security rules
+// Strategy: default-deny + scoped self-read on `users/{uid}`.
+// All writes go through Cloud Functions (admin SDK), which bypass
+// these rules. The client only ever reads its own user doc.
+//
+// Why default-deny: the only collections the app reads server-side
+// (Firestore) are `users/{uid}` and we never expect client-side
+// reads of anything else. Anything we add later gets explicit
+// rules at the time it's added.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Per-user document. Holds trial / subscription state.
+    //  - read: only the owning user (UID must match the doc id).
+    //  - write: denied. All mutations happen via Cloud Functions
+    //    using the admin SDK, which bypasses these rules. This
+    //    means a client can't inflate `sessionCount` or flip
+    //    `subscriptionStatus` on itself to evade the paywall.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+
+      // Future-proof: any subcollection under a user must opt in.
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+
+    // Catch-all: deny everything else (any new collection we add
+    // needs an explicit rule, not a free pass).
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
