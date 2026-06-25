@@ -623,7 +623,122 @@ portable path `test-flow.sh` now uses); `10.0.2.2` is an emulator-only fallback.
 
 ---
 
-## 11. Known gotchas
+## 11. UI interaction — `scripts/ui.sh`
+
+Lets you tap buttons, switch themes, select a deck, take screenshots, and
+inspect the full UI tree from the terminal — without touching the phone screen.
+
+```bash
+scripts/ui.sh dump                     # print the live UI element tree
+scripts/ui.sh screenshot [label]       # save PNG to _debug/screenshots/
+scripts/ui.sh tap "Dark"               # tap any element whose text matches
+scripts/ui.sh select-deck "Aws Exam"   # tap a deck row by partial name
+scripts/ui.sh decks                    # list all visible deck names
+scripts/ui.sh theme                    # toggle dark/light theme button
+scripts/ui.sh reload                   # open Expo dev menu → tap Reload
+scripts/ui.sh back                     # Android back button
+scripts/ui.sh swipe up                 # scroll up in a list
+scripts/ui.sh input-text "hello"       # type into the focused text input
+scripts/ui.sh dump-grep "deck"         # filter UI tree to matching nodes
+```
+
+Under the hood:
+
+- `uiautomator dump` snapshots the live view hierarchy to `/sdcard/` then pulls it
+- A Python stdlib script parses the XML, finds elements by `text` or `content-desc`
+- `adb shell input tap X Y` fires the click at the element's centre point
+
+**Interactive alternative — `scrcpy`** is better for exploratory manual debugging:
+it mirrors the device screen to your laptop and lets you use your mouse.
+
+```bash
+sudo apt install scrcpy   # or: brew install scrcpy
+scrcpy --turn-screen-on   # opens a window; click to tap, drag to scroll
+```
+
+Use `scrcpy` when you want to click around freely. Use `ui.sh` when you want
+reproducible scripted actions (e.g. always select the same deck, always take
+a screenshot at the same point in a test flow).
+
+---
+
+## 12. Device vs emulator — tool compatibility matrix
+
+> **TL;DR:** use the physical Pixel 9 for everything except isolated write-back
+> testing (where the emulator's clean state is the point).
+
+| Tool / capability                                      | Physical Pixel 9       | `google_apis` emulator | `google_apis_playstore` emulator |
+| ------------------------------------------------------ | ---------------------- | ---------------------- | -------------------------------- |
+| `npm run android` / Metro hot reload                   | ✅                     | ✅                     | ✅                               |
+| `scripts/snap.sh` / `ui.sh screenshot`                 | ✅                     | ✅                     | ✅                               |
+| `scripts/ui.sh` (tap, theme, dump)                     | ✅                     | ✅                     | ✅                               |
+| `scripts/answer.sh` (text injection)                   | ✅                     | ✅                     | ✅                               |
+| `scripts/test-flow.sh` (E2E pipeline)                  | ✅                     | ✅ slow                | ✅ slow                          |
+| Real microphone / VAD → transcript                     | ✅ **only here**       | ❌ mic ~−65 dB         | ❌ mic ~−65 dB                   |
+| Gemini Live voice session (full)                       | ✅ **only here**       | ❌ no real audio       | ❌ no real audio                 |
+| `scripts/check-writeback.sh`                           | ✅ personal collection | ✅ test deck           | ✅ test deck                     |
+| `scripts/monitor-writeback.sh --live`                  | ✅                     | ✅                     | ✅                               |
+| `monitor-writeback.sh --instrumented` (WriteBackTest)  | ✅ personal collection | ✅ **clean/isolated**  | ✅ clean/isolated                |
+| `scripts/setup-test-emulator.sh` (auto-seed AnkiDroid) | ❌ n/a                 | ✅                     | ✅                               |
+| `adb root` / SQLite direct access                      | ❌ production ROM      | ✅ **root OK**         | ❌ Play-protected                |
+| `scripts/test-e2e-clean.sh` (isolated E2E)             | ❌ uses personal data  | ✅ **preferred**       | ✅                               |
+
+### When to use each
+
+**Physical Pixel 9 (USB `45151FDAQ001HS`)** — the primary dev device.
+
+- Anything involving real voice: mic → VAD → Gemini Live → audio out.
+- Session debugging (`test-flow.sh`, `check-writeback.sh`, live logcat).
+- UI interactions (`ui.sh`, `scrcpy`).
+- The write-back tests work here too, but they run against your personal
+  AnkiDroid collection, so the test deck gets added to it.
+
+**`google_apis` emulator** (AVD: `Pixel_9_Test`) — for isolated, reproducible testing.
+
+- `setup-test-emulator.sh` boots it, installs AnkiDroid, and imports the
+  controlled 5-card deck — no personal data involved.
+- `WriteBackTest.kt` verifies the scheduler write-back against that deck only.
+- `adb root` works, giving full SQLite access if you need to inspect the raw DB.
+- No real voice session possible (mic is dead, audio output is silent).
+
+**`google_apis_playstore` emulator** — only if you need to test Play Billing UI.
+
+- Same constraints as `google_apis` for voice/mic.
+- Cannot be rooted, so no SQLite inspection.
+- AnkiDroid + test deck can still be imported via `setup-test-emulator.sh`.
+
+### Emulator image: which to install
+
+```bash
+# List installed images:
+sdkmanager --list | grep "system-images.*google_apis"
+
+# Install the rootable image (needed for setup-test-emulator.sh):
+sdkmanager "system-images;android-34;google_apis;x86_64"
+
+# Create the AVD (run once):
+avdmanager create avd -n Pixel_9_Test \
+  -k "system-images;android-34;google_apis;x86_64" \
+  --device "pixel_9"
+```
+
+Note: as of 2026-06-25, only `google_apis_playstore` images for android-34/35/36
+were installed (`sdkmanager --list` shows no bare `google_apis` images). Download
+the one above before running `test-e2e-clean.sh`.
+
+### How to target a specific device
+
+All scripts source `_device.sh`, which prefers the physical device when multiple
+are attached. Override per-invocation:
+
+```bash
+ANDROID_SERIAL=emulator-5554 scripts/test-e2e-clean.sh
+ANDROID_SERIAL=45151FDAQ001HS scripts/test-flow.sh
+```
+
+---
+
+## 13. Known gotchas
 
 - **Emulator mic is dead.** The AVD's default mic sits at ~−65 dB and never
   trips Gemini's VAD, so `user → transcript` won't fire from real speech on
@@ -658,7 +773,7 @@ ClassNotFoundException expo.modules.splashscreen.SplashScreenManager` is
 
 ---
 
-## 12. Files this debugging system touches
+## 14. Files this debugging system touches
 
 ```
 App/
@@ -668,22 +783,33 @@ App/
 ├── app.config.js                                ← exposes env to runtime via extra
 ├── scripts/
 │   ├── _device.sh                               ← shared ANDROID_SERIAL helper (phone-first when multiple devices)
-│   ├── snap.sh                                  ← screenshot helper
-│   ├── answer.sh                                ← simulated-user-answer injector
+│   ├── ui.sh                                    ← UI interaction: tap/screenshot/dump/reload/theme/swipe (§11)
+│   ├── snap.sh                                  ← quick screenshot (legacy alias; ui.sh screenshot is newer)
+│   ├── answer.sh                                ← simulated-user-answer injector (dev-only deep link)
 │   ├── test-flow.sh                             ← multi-card E2E pipeline (autostart via &autostart=1)
-│   └── check-writeback.sh                       ← write-back verification (exit 0=ok, 1=0rows, 2=timeout)
+│   ├── check-writeback.sh                       ← write-back verification (exit 0=ok, 1=0rows, 2=timeout)
+│   ├── monitor-writeback.sh                     ← 3 modes: --live / --logcat / --instrumented (§8)
+│   ├── setup-test-emulator.sh                   ← boot google_apis AVD + install AnkiDroid + import test deck (§12)
+│   ├── test-e2e-clean.sh                        ← full isolated pipeline: boot → seed → WriteBackTest (§12)
+│   ├── resilient-logcat.sh                      ← auto-restart adb logcat over USB drops
+│   └── create-test-apkg.py                      ← generate engram-test-deck.apkg from Python stdlib
 ├── _debug/
-│   ├── snaps/                                   ← captured PNGs (gitignored-friendly)
-│   └── runs/                                    ← per-run log + summary files
+│   ├── screenshots/                             ← ui.sh screenshot output
+│   ├── snaps/                                   ← snap.sh / test-flow.sh PNGs
+│   └── runs/                                    ← per-run log + summary files from test-flow.sh
+├── modules/anki-droid/android/src/androidTest/
+│   └── …/WriteBackTest.kt                       ← Kotlin instrumented tests: scheduler write-back (§12)
 └── src/
     ├── services/
     │   ├── sessionDebugLogger.ts                ← the logger itself
     │   ├── sessionManager.ts                    ← step banners + tool lifecycle
     │   ├── geminiManager.ts                     ← WS / setup / toolCall events / playback halt flag
     │   ├── cardLoader.ts                        ← deck load + fetchAndAppendNextCard (BUG 5 v3b refill)
-    │   └── autostartFlag.ts                    ← env+deep-link gate for the deck-select autostart
+    │   └── autostartFlag.ts                     ← env+deep-link gate for the deck-select autostart
     ├── stores/
     │   └── useSessionStore.ts                   ← phase transition logging
+    ├── test-harness/fixtures/
+    │   └── engram-test-deck.apkg                ← 5-card controlled deck for isolated testing
     └── app/
         ├── _layout.tsx                          ← engram://simulate deep-link listener
         └── (main)/
