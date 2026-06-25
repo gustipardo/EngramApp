@@ -38,30 +38,36 @@ export const useSettingsStore = create(
       setAlwaysReadBack: (alwaysReadBack) => set({ alwaysReadBack }),
       toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
       setDeckInstructions: (deckName, instructions) =>
-        set((state) => ({
-          deckInstructions: {
-            ...state.deckInstructions,
-            ...(instructions.trim()
-              ? { [deckName]: instructions.trim() }
-              : Object.fromEntries(
-                  Object.entries(state.deckInstructions).filter(([k]) => k !== deckName)
-                )),
-          },
-        })),
+        set((state) => {
+          const trimmed = instructions.trim();
+          if (trimmed) {
+            return {
+              deckInstructions: { ...state.deckInstructions, [deckName]: trimmed },
+            };
+          }
+          // Empty input → drop the entry so the deck falls back to the
+          // default no-instructions state rather than persisting an
+          // explicit empty string. Object spread is NOT used here because
+          // `...state.deckInstructions` would reintroduce the entry before
+          // the filtered set had a chance to remove it.
+          const next = { ...state.deckInstructions };
+          delete next[deckName];
+          return { deckInstructions: next };
+        }),
       setDeckLanguage: (deckName, languageCode) =>
-        set((state) => ({
-          deckLanguages: {
-            ...state.deckLanguages,
-            // Empty / default → drop the entry so the deck falls back to
-            // DEFAULT_DECK_LANGUAGE rather than persisting an explicit
-            // override that matches the default.
-            ...(languageCode && languageCode !== DEFAULT_DECK_LANGUAGE
-              ? { [deckName]: languageCode }
-              : Object.fromEntries(
-                  Object.entries(state.deckLanguages).filter(([k]) => k !== deckName)
-                )),
-          },
-        })),
+        set((state) => {
+          // Empty / default → drop the entry so the deck falls back to
+          // DEFAULT_DECK_LANGUAGE rather than persisting an explicit
+          // override that matches the default.
+          if (languageCode && languageCode !== DEFAULT_DECK_LANGUAGE) {
+            return {
+              deckLanguages: { ...state.deckLanguages, [deckName]: languageCode },
+            };
+          }
+          const next = { ...state.deckLanguages };
+          delete next[deckName];
+          return { deckLanguages: next };
+        }),
     }),
     {
       name: 'settings-storage',
