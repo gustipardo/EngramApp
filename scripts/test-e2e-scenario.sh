@@ -120,6 +120,14 @@ wait_for_marker() {
 
 section "1 — Import deck: $SCENARIO_DECK"
 
+# Known limitation (2026-06-25): on Android ≥14 Play Store images,
+# `am start -d file://…` strips the URI (scoped storage). AnkiDroid logs
+# "Data: none" and "File import failed". The deck row never appears in
+# Engram's deck-select, and STEP 7 times out. The script still proceeds
+# to launch the app and wait — assertions will fail loudly.
+# Fix path: install `system-images;android-34;google_apis;x86_64` and
+# use the rootable AVD. See DEBUGGING.md §12.
+
 log "Pushing .apkg to device..."
 adb -s "$ANDROID_SERIAL" push "$APKG" /sdcard/Download/"${SCENARIO_PROFILE}.apkg"
 
@@ -203,7 +211,11 @@ fi
 section "4 — Wait for session STEP 7 (study loop active)"
 
 wait_for_marker "STEP 7" "$SCENARIO_STEP7_TIMEOUT_S" "STEP 7/8 — mic unmuted, study loop active" || {
-    fail "Session never reached STEP 7. Check Metro is running and the deck name matches."
+    fail "Session never reached STEP 7. Common causes:"
+    echo "    - Metro is not running (cd App && npx expo start --dev-client)"
+    echo "    - The deck name in the scenario doesn't match what AnkiDroid imported"
+    echo "    - Android ≥14 scoped storage blocked the file:// import (DEBUGGING.md §12)"
+    echo "    - App is missing RECORD_AUDIO / READ_WRITE_DATABASE permissions"
     kill "$LOGCAT_PID" 2>/dev/null || true
     bash "$SCRIPT_DIR/assert-session.sh" --log "$LOG_FILE" \
         --expect-correct 0 --expect-complete 2>/dev/null || true

@@ -706,6 +706,16 @@ a screenshot at the same point in a test flow).
 - Same constraints as `google_apis` for voice/mic.
 - Cannot be rooted, so no SQLite inspection.
 - AnkiDroid + test deck can still be imported via `setup-test-emulator.sh`.
+- **Known limitation (2026-06-25):** `test-e2e-scenario.sh`'s deck-import step
+  uses `am start ... -d file:///sdcard/Download/foo.apkg`. On Android ≥14 with
+  scoped storage, `am` strips `file:///` URIs from cross-app intents — AnkiDroid's
+  IntentHandler logs `Intent: ... Data: none` and `File import failed`. Symptoms
+  on device: deck row never appears in Engram's deck-select; STEP 7 times out;
+  Assert logs `Session never reached STEP 7`. Verified on Android 16
+  (`google_apis_playstore;android-36;x86_64`, AnkiDroid 2.24.0). Workaround:
+  install the rootable `system-images;android-34;google_apis;x86_64` image and
+  use the `google_apis` AVD instead. A `content://`-based fix would need a
+  FileProvider helper — see `KNOWN_ISSUES.md` (TODO).
 
 ### Emulator image: which to install
 

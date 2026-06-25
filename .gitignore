@@ -55,3 +55,6 @@ _bmad-output/
 # Debug artifacts produced by scripts/test-flow.sh, snap.sh, etc.
 # Keeps screenshots and logcat captures out of git.
 _debug/
+
+# Cached downloads (e.g. AnkiDroid APK pulled by setup-test-emulator.sh)
+.cache/
