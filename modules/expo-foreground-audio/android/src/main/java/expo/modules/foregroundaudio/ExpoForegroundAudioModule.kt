@@ -118,6 +118,23 @@ class ExpoForegroundAudioModule : Module() {
     AsyncFunction("stopAudioPlayer") {
       audioTrackManager.stop()
     }
+
+    // Flush the audio queue immediately (pause + flush + resume player).
+    // Use this on Pause/End Session so the tutor stops speaking right away
+    // instead of draining the buffer first.
+    AsyncFunction("flushAudioPlayer") {
+      audioTrackManager.flush()
+    }
+
+    // SYNCHRONOUS. Flips the AudioTrackManager `halted` flag so any
+    // playAudioChunk AsyncFunction calls already queued on the dispatcher
+    // early-return as no-ops. Must be sync because AsyncFunctions are
+    // serialized — calling flushAudioPlayer() alone would have to wait
+    // behind the queued chunks, defeating the purpose. Call this from
+    // End Session / Pause BEFORE flushAudioPlayer (BUG 6).
+    Function("haltAudioPlayer") { halted: Boolean ->
+      audioTrackManager.setHalted(halted)
+    }
   }
 
   fun emitAudioFocusChange(state: String) {

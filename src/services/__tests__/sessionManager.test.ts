@@ -59,6 +59,7 @@ jest.mock('../realtimeManager', () => ({
     getAudioStats: (...a: any[]) => mockGetAudioStats(...a),
     debugAudioTrackState: (...a: any[]) => mockDebugAudioTrackState(...a),
     onConnectionDropped: null as null | (() => void),
+    stopCurrentAudio: jest.fn(),
   },
 }));
 
@@ -82,6 +83,7 @@ const mockGetTotalCardCount = jest.fn();
 const mockClearCards = jest.fn();
 const mockAdvanceCacheIndex = jest.fn();
 const mockGetNextCard = jest.fn();
+const mockFetchAndAppendNextCard = jest.fn();
 jest.mock('../cardLoader', () => ({
   loadDueCards: (...a: any[]) => mockLoadDueCards(...a),
   getCurrentCard: (...a: any[]) => mockGetCurrentCard(...a),
@@ -92,6 +94,7 @@ jest.mock('../cardLoader', () => ({
   getTotalCardCount: (...a: any[]) => mockGetTotalCardCount(...a),
   clearCards: (...a: any[]) => mockClearCards(...a),
   advanceCacheIndex: (...a: any[]) => mockAdvanceCacheIndex(...a),
+  fetchAndAppendNextCard: (...a: any[]) => mockFetchAndAppendNextCard(...a),
 }));
 
 jest.mock('../foregroundAudioService', () => ({
@@ -111,6 +114,15 @@ jest.mock('../analytics', () => ({
     sessionCompleted: jest.fn(),
     sessionError: jest.fn(),
     sessionReconnected: jest.fn(),
+  },
+}));
+
+jest.mock('../sfxPlayer', () => ({
+  sfxPlayer: {
+    play: jest.fn(),
+    stop: jest.fn(),
+    preload: jest.fn(),
+    release: jest.fn(),
   },
 }));
 
@@ -158,7 +170,7 @@ beforeEach(() => {
   // Reset internal sessionManager state by clearing private fields via cast.
   // Cleaner than jest.resetModules() because we keep the same singleton ref
   // that other modules might already hold.
-  (sessionManager as any).pendingCardAdvance = false;
+  (sessionManager as any).clearEvaluatingRecovery?.();
   (sessionManager as any).lastAnsweredCardId = null;
   (sessionManager as any).lastAnsweredCardOrd = null;
   (sessionManager as any).toolCallNames = new Map();
@@ -170,6 +182,9 @@ beforeEach(() => {
   mockGetRemainingCardCount.mockReturnValue(5);
   mockAnswerCard.mockResolvedValue(true);
   mockGetDueCardsBridge.mockResolvedValue([]); // default: no more due cards
+  // BUG 5 v3b: default refill returns NEXT_CARD so existing tests that
+  // expected a populated cache after answer keep their semantics.
+  mockFetchAndAppendNextCard.mockResolvedValue(NEXT_CARD);
 });
 
 describe('sessionManager — evaluate_and_move_next dispatch', () => {
@@ -235,6 +250,40 @@ describe('sessionManager — evaluate_and_move_next dispatch', () => {
     expect(callId).toBe('call_x');
     expect(result.answered_card_back).toBe(SAMPLE_CARD.back);
     expect(result.next_card).toEqual({ front: NEXT_CARD.front, back: NEXT_CARD.back });
+  });
+
+  // BUG 10 fix: `remaining_cards` must report the AnkiDroid deck's actual due
+  // pile (snapshotted at startSession into totalDueAtStart), not the size of
+  // the 1-deep in-memory cache. Under refill-from-scheduler the cache always
+  // holds at most 2 cards, so the old `peekRemainingAfterAdvance()` source
+  // returned 1 every turn and the tutor concluded "this is the last card"
+  // even with 200 cards left in the deck.
+  it('reports remaining_cards from the AnkiDroid due snapshot, not the cache', async () => {
+    useSessionStore.setState({ totalDueAtStart: 200 });
+
+    await (sessionManager as any).handleEvaluateAndMoveNext('c', {
+      user_response_quality: 'correct',
+      feedback_text: 'ok',
+    });
+
+    const result = mockSendToolResult.mock.calls[0][1];
+    // 200 due at start − 1 just-answered = 199 remaining
+    expect(result.remaining_cards).toBe(199);
+  });
+
+  it('clamps remaining_cards at 0 if the user keeps studying past the snapshot', async () => {
+    useSessionStore.setState({
+      totalDueAtStart: 1,
+      stats: { correct: 2, incorrect: 0 },
+    });
+
+    await (sessionManager as any).handleEvaluateAndMoveNext('c', {
+      user_response_quality: 'correct',
+      feedback_text: 'ok',
+    });
+
+    const result = mockSendToolResult.mock.calls[0][1];
+    expect(result.remaining_cards).toBe(0);
   });
 
   it('captures lastAnsweredCardId so override can target the right card later', async () => {

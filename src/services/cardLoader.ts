@@ -1,6 +1,7 @@
 import { ankiBridge } from '../native/ankiBridge';
 import { useCardCacheStore } from '../stores/useCardCacheStore';
 import { useSessionStore } from '../stores/useSessionStore';
+import { sessionLog } from './sessionDebugLogger';
 import type { AnkiCard } from '../types/anki';
 
 /**
@@ -17,15 +18,15 @@ export async function loadDueCards(deckName: string): Promise<AnkiCard[]> {
     const cards = await ankiBridge.getDueCards(deckName);
 
     if (cards.length === 0) {
-      console.log('[CardLoader] No due cards found');
+      sessionLog.warn('CardLoader', 'no due cards found', { deck: deckName });
       return [];
     }
 
     setCards(cards);
-    console.log(`[CardLoader] Loaded ${cards.length} due cards`);
+    sessionLog.event('CardLoader', 'cards loaded', { deck: deckName, count: cards.length });
     return cards;
-  } catch (error) {
-    console.error('[CardLoader] Failed to load cards:', error);
+  } catch (error: any) {
+    sessionLog.error('CardLoader', 'failed to load cards', { deck: deckName, message: error?.message });
     throw error;
   }
 }
@@ -95,4 +96,36 @@ export function getTotalCardCount(): number {
  */
 export function clearCards(): void {
   useCardCacheStore.getState().clear();
+}
+
+/**
+ * Refill path (BUG 5 v3b). After each answerCard write-back, the
+ * AnkiDroid scheduler's head advances to the next due card in the deck.
+ * We re-query, push it onto the cache (no dedupe — failed cards can
+ * legitimately re-appear), and return it so the caller can include it
+ * in the next tool_result.
+ *
+ * Returns `null` when the deck is exhausted (scheduler returns empty).
+ * The caller should treat that as the "no more cards" signal.
+ */
+export async function fetchAndAppendNextCard(deckName: string): Promise<AnkiCard | null> {
+  try {
+    const cards = await ankiBridge.getDueCards(deckName);
+    if (!cards || cards.length === 0) {
+      sessionLog.event('CardLoader', 'scheduler returned no more cards', { deck: deckName });
+      return null;
+    }
+    // queryDueCards now returns only the scheduler head — take [0].
+    const next = cards[0];
+    useCardCacheStore.getState().pushCard(next);
+    sessionLog.event('CardLoader', 'refilled next card from scheduler', {
+      deck: deckName,
+      cardId: next.cardId,
+      ord: next.cardOrd,
+    });
+    return next;
+  } catch (error: any) {
+    sessionLog.error('CardLoader', 'refill failed', { deck: deckName, message: error?.message });
+    return null;
+  }
 }

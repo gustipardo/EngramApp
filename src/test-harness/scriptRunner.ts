@@ -78,7 +78,10 @@ export async function runFixture(fixture: Fixture, ctx: RunContext): Promise<Run
     networkStatus: 'online',
   });
   // Reset internal sessionManager state.
-  sessionManager.pendingCardAdvance = false;
+  // (pendingCardAdvance was removed in the BUG 4 fix — advance now happens
+  // synchronously in handleEvaluateAndMoveNext. Recovery timer is cleared
+  // here in case a previous run left one armed.)
+  (sessionManager as any).clearEvaluatingRecovery?.();
   sessionManager.lastAnsweredCardId = null;
   sessionManager.toolCallNames = new Map();
 

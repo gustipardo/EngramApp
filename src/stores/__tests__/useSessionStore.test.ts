@@ -86,6 +86,7 @@ describe('useSessionStore', () => {
       useSessionStore.getState().advanceCard();
       useSessionStore.getState().recordAnswer('correct');
       useSessionStore.getState().recordAnswer('incorrect');
+      useSessionStore.getState().setTotalDueAtStart(234);
 
       useSessionStore.getState().resetSession();
 
@@ -93,6 +94,25 @@ describe('useSessionStore', () => {
       expect(state.phase).toBe('idle');
       expect(state.currentCardIndex).toBe(0);
       expect(state.stats).toEqual({ correct: 0, incorrect: 0 });
+      expect(state.totalDueAtStart).toBe(0);
+    });
+  });
+
+  describe('totalDueAtStart (BUG 11)', () => {
+    it('starts at 0 (unknown until sessionManager snapshots it)', () => {
+      expect(useSessionStore.getState().totalDueAtStart).toBe(0);
+    });
+
+    it('setTotalDueAtStart updates the value', () => {
+      useSessionStore.getState().setTotalDueAtStart(234);
+      expect(useSessionStore.getState().totalDueAtStart).toBe(234);
+    });
+
+    it('survives a recordAnswer (the snapshot is for the whole session)', () => {
+      useSessionStore.getState().setTotalDueAtStart(50);
+      useSessionStore.getState().recordAnswer('correct');
+      useSessionStore.getState().recordAnswer('incorrect');
+      expect(useSessionStore.getState().totalDueAtStart).toBe(50);
     });
   });
 });

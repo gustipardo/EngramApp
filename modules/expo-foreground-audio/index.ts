@@ -30,6 +30,10 @@ declare class ExpoForegroundAudioNativeModule extends NativeModule<ForegroundAud
   initAudioPlayer(sampleRate: number): Promise<void>;
   playAudioChunk(base64Data: string): Promise<void>;
   stopAudioPlayer(): Promise<void>;
+  flushAudioPlayer(): Promise<void>;
+  // SYNCHRONOUS. Flips the native halted flag — call BEFORE flushAudioPlayer
+  // on End/Pause so queued playAudioChunk no-ops instantly (BUG 6).
+  haltAudioPlayer(halted: boolean): void;
 }
 
 const ExpoForegroundAudioModule =

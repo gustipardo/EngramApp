@@ -51,3 +51,7 @@ docs/
 # BMAD planning artifacts (frozen, archived in tree but no longer tracked)
 _bmad/
 _bmad-output/
+
+# Debug artifacts produced by scripts/test-flow.sh, snap.sh, etc.
+# Keeps screenshots and logcat captures out of git.
+_debug/

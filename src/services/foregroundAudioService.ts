@@ -2,6 +2,7 @@ import ExpoForegroundAudioModule from 'expo-foreground-audio';
 import { AppState } from 'react-native';
 import { useSessionStore } from '../stores/useSessionStore';
 import { realtimeManager as webrtcManager } from './realtimeManager';
+import { sfxPlayer } from './sfxPlayer';
 
 /**
  * Foreground Audio Service - JS wrapper for the native module.
@@ -138,9 +139,24 @@ function registerListeners(): void {
     });
   });
 
-  // Handle audio focus changes (phone calls, other audio apps)
+  // Handle audio focus changes (phone calls, other audio apps).
+  //
+  // Our own SFX (expo-audio) requests AUDIOFOCUS_GAIN when it plays the
+  // correct/incorrect chime, which fires a 'loss' callback here even though
+  // the focus stealer is *us*. We swallow any focus-loss event that arrives
+  // inside the SFX play window so the session doesn't auto-pause on every
+  // graded card. Real phone-call interruptions still pause because their
+  // focus retention extends well past the SFX window.
   ExpoForegroundAudioModule.addListener('onAudioFocusChange', (event) => {
     const { transitionTo, phase } = useSessionStore.getState();
+
+    const isLossEvent = event.state === 'loss'
+      || event.state === 'loss_transient'
+      || event.state === 'loss_transient_can_duck';
+    if (isLossEvent && sfxPlayer.isPlayingRecently()) {
+      console.log(`[foregroundAudio] ignoring focus '${event.state}' — within SFX window`);
+      return;
+    }
 
     switch (event.state) {
       case 'loss_transient':

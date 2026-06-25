@@ -5,8 +5,9 @@
  *
  * What this catches that Layer 1 unit tests can't:
  *   - The handler-registration wiring (sessionManager → realtimeManager.on).
- *   - The pendingCardAdvance dance (advance happens on response.done,
- *     not on tool-call completion).
+ *   - The eager-advance contract (advance happens synchronously inside
+ *     handleEvaluateAndMoveNext, right after sendToolResult, since the
+ *     BUG 4 fix on 2026-05-21).
  *   - Multi-turn state (lastAnsweredCardId carrying across turns for
  *     override).
  *   - Skipped answers correctly NOT advancing stats but still moving
@@ -64,6 +65,9 @@ jest.mock('../../services/cardLoader', () => {
     getTotalCardCount: jest.fn(() => deckSimulator.total()),
     clearCards: jest.fn(),
     advanceCacheIndex: jest.fn(() => deckSimulator.advance()),
+    // BUG 5 v3b: mimic the refill — peek what would be the new head and
+    // route via deckSimulator so it matches what peekNextCard returns.
+    fetchAndAppendNextCard: jest.fn(async (_deckName: string) => deckSimulator.peekNext() ?? null),
   };
 });
 
@@ -216,9 +220,10 @@ describe('Layer 2 — replay harness', () => {
     it('lands phase in awaiting_answer so user can retry', async () => {
       // After audio.delta + response.done with no tool call, phase walks:
       //   awaiting_answer → evaluating → giving_feedback → awaiting_answer.
-      // The advance branch's pendingCardAdvance check is false (no tool
-      // call ran handleEvaluate), so no advance — but phase still resets
-      // so the next user turn isn't blocked.
+      // No advance because handleEvaluate never ran — but phase still
+      // resets so the next user turn isn't blocked. Post-BUG-4-fix
+      // (2026-05-21), the recovery timer would also force phase exit
+      // if audio.delta hadn't arrived.
       const result = await runFixture(silentGradeNoToolCall, ctx);
       expect(result.perTurn[0].phaseAfter).toBe('awaiting_answer');
     });
@@ -236,13 +241,12 @@ describe('Layer 2 — replay harness', () => {
     });
   });
 
-  describe('tool call without follow-up audio — UI-stuck characterization', () => {
-    // These tests pin the CURRENT stuck-state behavior. Today the session
-    // gets stuck in 'evaluating' if the AI tool-calls but never speaks
-    // afterward — the second response.done that would normally advance
-    // the card never arrives, and there's no recovery mechanism. Adding
-    // a timeout/force-advance later will deliberately break these
-    // assertions and force an explicit update.
+  describe('tool call without follow-up audio — post-BUG-4-fix contract', () => {
+    // After the BUG 4 fix on 2026-05-21, advance is eager (happens inside
+    // handleEvaluateAndMoveNext, right after sendToolResult) — no longer
+    // gated on the AI's feedback turn finishing.  The recovery timer
+    // (sessionManager.startEvaluatingRecovery, 8 s) handles the phase
+    // unstuck if the AI never speaks audio.
     it('writes the answer to AnkiDroid (the tool result side works)', async () => {
       const result = await runFixture(toolCallNoAudio, ctx);
       expect(result.ankiWrites).toEqual([
@@ -255,13 +259,19 @@ describe('Layer 2 — replay harness', () => {
       expect(result.finalStats).toEqual({ correct: 1, incorrect: 0 });
     });
 
-    it('does NOT advance the card index — visual stays on card 1', async () => {
+    it('advances the card index eagerly (post-BUG-4 fix)', async () => {
+      // Pre-fix: stayed at 0 because advance was gated on response.done.
+      // Post-fix: handleEvaluateAndMoveNext advances synchronously.
       const result = await runFixture(toolCallNoAudio, ctx);
-      expect(result.perTurn[0].cardIndexAfter).toBe(0);
+      expect(result.perTurn[0].cardIndexAfter).toBe(1);
     });
 
-    it('phase is stuck in evaluating (no recovery yet)', async () => {
-      // CURRENT BEHAVIOR. When recovery lands, change to 'awaiting_answer'.
+    it('phase is stuck in evaluating until recovery timer fires', async () => {
+      // The replay harness doesn't advance fake timers, so the recovery
+      // timer (8 s) hasn't fired yet at perTurn snapshot time. Phase
+      // remains in `evaluating` for now. A future test can use
+      // jest.useFakeTimers() + advanceTimersByTime to verify the
+      // recovery transition.
       const result = await runFixture(toolCallNoAudio, ctx);
       expect(result.perTurn[0].phaseAfter).toBe('evaluating');
     });

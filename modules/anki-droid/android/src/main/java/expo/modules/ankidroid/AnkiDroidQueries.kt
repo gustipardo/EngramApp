@@ -83,7 +83,9 @@ internal fun queryDueCards(contentResolver: ContentResolver, deckName: String): 
         if (noteIdIdx < 0) continue
         val nid = it.getLong(noteIdIdx)
         val ord = if (ordIdx >= 0) it.getInt(ordIdx) else 0
-        dueRefs.add(DueRef(nid, ord))
+        // Scheduler hands us cards in review order, so anchor due=0 for
+        // the head — it should always lead the final sorted list.
+        dueRefs.add(DueRef(nid, ord, due = 0L))
       }
     }
   } finally {
@@ -92,64 +94,31 @@ internal fun queryDueCards(contentResolver: ContentResolver, deckName: String): 
 
   Log.d(TAG, "queryDueCards: scheduler returned ${dueRefs.size} due cards for deck $deckId")
 
-  // Step 1b: Pad with the rest of the deck's cards via the CARDS URI.
-  // The notes URI's `?deckID=` is ignored by AnkiDroid 2.23+ — it leaks
-  // foreign-deck notes into the result. The cards URI's `?query=did:<id>`
-  // routes through `Collection.findCards()` which fully respects deck
-  // scope, plus exposes the real `ord` per card. Defense-in-depth: drop
-  // any row whose `did` column doesn't match (shouldn't happen, but
-  // belt-and-braces against future API drift).
-  val dueCount = queryDeckDueCount(contentResolver, deckName).coerceAtLeast(1)
-  val seenNoteIds = dueRefs.map { it.noteId }.toMutableSet()
-
-  if (dueRefs.size < dueCount) {
-    val cardsQueryUri = CARDS_URI.buildUpon()
-      .appendQueryParameter("query", "did:$deckId")
-      .appendQueryParameter("limit", dueCount.toString())
-      .build()
-    var cardsCursor: Cursor? = null
-    try {
-      cardsCursor = contentResolver.query(cardsQueryUri, null, null, null, null)
-      cardsCursor?.let {
-        Log.d(TAG, "queryDueCards: cards columns: ${it.columnNames.joinToString()}")
-        val nidIdx = it.getColumnIndex("nid").takeIf { i -> i >= 0 }
-          ?: it.getColumnIndex("note_id")
-        val ordIdx = it.getColumnIndex("ord").takeIf { i -> i >= 0 }
-          ?: it.getColumnIndex("card_ord")
-        val didIdx = it.getColumnIndex("did").takeIf { i -> i >= 0 }
-          ?: it.getColumnIndex("deck_id")
-        while (it.moveToNext() && dueRefs.size < dueCount) {
-          if (nidIdx < 0) continue
-          val nid = it.getLong(nidIdx)
-          val ord = if (ordIdx >= 0) it.getInt(ordIdx) else 0
-          if (didIdx >= 0) {
-            val rowDid = it.getLong(didIdx)
-            if (rowDid != deckId) {
-              Log.w(TAG, "queryDueCards: cards URI returned card for did=$rowDid, expected $deckId — skipping")
-              continue
-            }
-          }
-          if (seenNoteIds.contains(nid)) continue
-          seenNoteIds.add(nid)
-          dueRefs.add(DueRef(nid, ord))
-        }
-      }
-    } catch (e: Exception) {
-      Log.w(TAG, "queryDueCards: cards URI fallback failed: ${e.message}")
-    } finally {
-      cardsCursor?.close()
-    }
-    Log.d(TAG, "queryDueCards: after cards-URI fallback have ${dueRefs.size} card(s) (cap=$dueCount)")
-  }
-
+  // Earlier versions of this function padded the result with cards from
+  // the CARDS URI (`?query=did:N is:due`). That URI returns results in
+  // `nid` (insertion) order and DOES NOT expose `due` — meaning the
+  // pad was always wrong-ordered. Concretely: slot[1] was the deck's
+  // oldest-added card every session (SESSION-FLOW.md BUG 5). Attempts to
+  // fix it via explicit projection (BUG 7 regression) or sortOrder hint
+  // (silently ignored by AnkiDroid 2.23) both failed.
+  //
+  // Current design: this function returns only the scheduler head. The
+  // JS layer (cardLoader + sessionManager) calls it again after each
+  // answerCard write-back to obtain the new head. That walks the deck
+  // in AnkiDroid's real review order, no `due` column needed.
   if (dueRefs.isEmpty()) {
     return emptyList()
   }
 
+  // No re-sort needed: a single card list is trivially sorted. Variable
+  // name kept so the rest of the function (hydration, result build) is
+  // unchanged.
+  val sortedDueRefs = dueRefs
+
   // Step 2: Hydrate each note's fields via per-note URI. AnkiDroid's
   // notes provider does not accept `_id IN (...)` selections, so we
   // query one note at a time. Sub-100ms for typical batch sizes.
-  val uniqueNoteIds = dueRefs.map { it.noteId }.toSet()
+  val uniqueNoteIds = sortedDueRefs.map { it.noteId }.toSet()
   val noteFieldsByNoteId = HashMap<Long, String>(uniqueNoteIds.size)
   for (noteId in uniqueNoteIds) {
     var noteCursor: Cursor? = null
@@ -172,15 +141,17 @@ internal fun queryDueCards(contentResolver: ContentResolver, deckName: String): 
     }
   }
 
-  // Step 3: Build result preserving scheduler order.
+  // Step 3: Build result preserving the sorted (by-due) order.
   val cards = mutableListOf<Map<String, Any>>()
-  for (ref in dueRefs) {
+  for (ref in sortedDueRefs) {
     val fields = noteFieldsByNoteId[ref.noteId] ?: continue
     val parsed = parseNoteFields(fields, ref.noteId, deckName, ref.ord) ?: continue
     cards.add(parsed)
   }
 
-  Log.d(TAG, "queryDueCards: returning ${cards.size} due cards for '$deckName'")
+  // First few + last for sanity: easy to spot a stuck slot[1] in logcat.
+  val orderSummary = sortedDueRefs.take(3).joinToString(",") { "${it.noteId}@${it.due}" }
+  Log.d(TAG, "queryDueCards: returning ${cards.size} due cards for '$deckName' (head: $orderSummary)")
   return cards
 }
 
@@ -235,7 +206,11 @@ internal fun submitCardAnswer(
 
 // -- Internal helpers -------------------------------------------------------
 
-internal data class DueRef(val noteId: Long, val ord: Int)
+// `due` is AnkiDroid's scheduling timestamp/position for the card.
+// Long.MAX_VALUE = unknown (column not exposed by the cursor); such cards
+// sort last in the natural-due order so they're seen after cards we
+// actually have ordering info for.
+internal data class DueRef(val noteId: Long, val ord: Int, val due: Long = Long.MAX_VALUE)
 
 internal data class DeckCounts(val new: Int, val learn: Int, val review: Int)
 
