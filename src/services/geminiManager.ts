@@ -1,9 +1,10 @@
-import Constants from 'expo-constants';
-import ExpoForegroundAudioModule from 'expo-foreground-audio';
-import { micSource } from './micSource';
-import { useConnectionStore } from '../stores/useConnectionStore';
+import Constants from "expo-constants";
+import ExpoForegroundAudioModule from "expo-foreground-audio";
+import { micSource } from "./micSource";
+import { useConnectionStore } from "../stores/useConnectionStore";
+import { sessionLog } from "./sessionDebugLogger";
 
-const GEMINI_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
+const GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 const INPUT_SAMPLE_RATE = 16000;
 const OUTPUT_SAMPLE_RATE = 24000;
 
@@ -21,6 +22,20 @@ class GeminiManager {
   private audioDataSubscription: any = null;
   private isReconnecting = false;
   private isInitialConnect = false;
+  // True between `stopCurrentAudio()` and the next `connect()`. While set,
+  // incoming `serverContent.modelTurn.parts` audio chunks are dropped
+  // instead of forwarded to the AudioTrack — prevents trailing TTS after
+  // End Session / Pause when the WS keeps streaming during teardown
+  // (SESSION-FLOW.md BUG 6).
+  private playbackHalted = false;
+
+  // Latest server-issued session-resumption handle (Gemini `sessionResumptionUpdate`).
+  // Persisted across an unintended drop so `updateSession` can replay it in the
+  // reconnect `setup` and have the server restore the real conversation context
+  // — the native fix for BUG 15 (resume-of-context used to fail). Cleared on a
+  // fresh session (`connect()` when not reconnecting) and on full `disconnect()`
+  // so a stale handle never leaks into a new session. See GEMINI-API.md §16.
+  private sessionResumptionHandle: string | null = null;
 
   // Audio stats tracking (for level meter + debugging)
   private audioBytesSent = 0;
@@ -35,7 +50,7 @@ class GeminiManager {
 
   private getApiKey(): string {
     const key = Constants.expoConfig?.extra?.geminiApiKey;
-    if (!key) throw new Error('GEMINI_API_KEY not found in app config');
+    if (!key) throw new Error("GEMINI_API_KEY not found in app config");
     return key;
   }
 
@@ -52,32 +67,45 @@ class GeminiManager {
     const setConnectionState = useConnectionStore.getState().setConnectionState;
 
     try {
-      setConnectionState('connecting');
+      setConnectionState("connecting");
       this.isInitialConnect = true;
+      this.playbackHalted = false;
+
+      // A fresh session (not a reconnect) must not carry a resumption handle
+      // from a previous session. `reconnect()` sets `isReconnecting` before
+      // calling us, so this only clears on a genuine new-session connect.
+      if (!this.isReconnecting) {
+        this.sessionResumptionHandle = null;
+      }
 
       // 1. Open WebSocket
       await this.openWebSocket();
-      console.log('[Gemini] Step 1 done: WebSocket opened');
+      sessionLog.info("Gemini", "WebSocket opened");
 
       // 2. Init audio output player
       await ExpoForegroundAudioModule.initAudioPlayer(OUTPUT_SAMPLE_RATE);
-      console.log('[Gemini] Step 2 done: Audio player initialized');
+      sessionLog.info("Gemini", "audio player initialised", {
+        sampleRate: OUTPUT_SAMPLE_RATE,
+      });
 
       // 3. Start mic capture (muted initially — chunks won't be sent).
       //    Goes through `micSource` so test mode can substitute a
       //    pre-recorded PCM stream without touching this code path.
       await micSource.startCapture(INPUT_SAMPLE_RATE);
       this.setupAudioDataListener();
-      console.log('[Gemini] Step 3 done: Mic capture started');
+      sessionLog.info("Gemini", "mic capture started", {
+        sampleRate: INPUT_SAMPLE_RATE,
+      });
 
       this.isInitialConnect = false;
-      setConnectionState('connected');
-      console.log('[Gemini] Connected');
+      setConnectionState("connected");
       return true;
-    } catch (error) {
-      console.error('[Gemini] Connection failed:', error);
+    } catch (error: any) {
+      sessionLog.error("Gemini", "connection failed", {
+        message: error?.message,
+      });
       this.isInitialConnect = false;
-      setConnectionState('failed');
+      setConnectionState("failed");
       this.cleanupConnection();
       throw error;
     }
@@ -85,19 +113,23 @@ class GeminiManager {
 
   async reconnect(): Promise<boolean> {
     if (this.isReconnecting) {
-      console.warn('[Gemini] Reconnect already in progress');
+      sessionLog.warn("Gemini", "reconnect already in progress");
       return false;
     }
 
     this.isReconnecting = true;
     const connStore = useConnectionStore.getState();
-    connStore.setConnectionState('reconnecting');
+    connStore.setConnectionState("reconnecting");
     connStore.resetReconnectAttempts();
 
     for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
       useConnectionStore.getState().incrementReconnectAttempts();
       const delay = RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-      console.log(`[Gemini] Reconnect attempt ${attempt}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms`);
+      sessionLog.info(
+        "Gemini",
+        `reconnect attempt ${attempt}/${MAX_RECONNECT_ATTEMPTS}`,
+        { delay_ms: delay },
+      );
 
       await this.sleep(delay);
       this.cleanupConnection();
@@ -106,15 +138,17 @@ class GeminiManager {
         await this.connect();
         useConnectionStore.getState().resetReconnectAttempts();
         this.isReconnecting = false;
-        console.log(`[Gemini] Reconnected on attempt ${attempt}`);
+        sessionLog.info("Gemini", `reconnected on attempt ${attempt}`);
         return true;
-      } catch (error) {
-        console.warn(`[Gemini] Reconnect attempt ${attempt} failed:`, error);
+      } catch (error: any) {
+        sessionLog.warn("Gemini", `reconnect attempt ${attempt} failed`, {
+          message: error?.message,
+        });
       }
     }
 
-    console.error('[Gemini] All reconnect attempts failed');
-    useConnectionStore.getState().setConnectionState('failed');
+    sessionLog.error("Gemini", "all reconnect attempts failed");
+    useConnectionStore.getState().setConnectionState("failed");
     this.isReconnecting = false;
     return false;
   }
@@ -124,8 +158,8 @@ class GeminiManager {
     this.onConnectionDropped = null;
     this.isReconnecting = false;
     this.cleanup();
-    setConnectionState('disconnected');
-    console.log('[Gemini] Disconnected');
+    setConnectionState("disconnected");
+    sessionLog.info("Gemini", "disconnected");
   }
 
   // -------------------------------------------------------------------------
@@ -135,25 +169,28 @@ class GeminiManager {
   private openWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
       const url = this.getWsUrl();
-      console.log('[Gemini] Opening WebSocket...');
+      sessionLog.debug("Gemini", "opening WebSocket", {
+        url: url.replace(/key=[^&]+/, "key=***"),
+      });
       this.ws = new WebSocket(url);
 
       const timeout = setTimeout(() => {
-        reject(new Error('WebSocket connection timeout'));
+        reject(new Error("WebSocket connection timeout"));
       }, 15000);
 
       this.ws.onopen = () => {
         clearTimeout(timeout);
-        console.log('[Gemini] WebSocket opened');
         resolve();
       };
 
       this.ws.onerror = (error: any) => {
         clearTimeout(timeout);
-        console.error('[Gemini] WebSocket error:', error.message || error);
+        sessionLog.error("Gemini", "WebSocket error", {
+          message: error?.message || String(error),
+        });
         // Only reject if we're still in the initial connect handshake
         if (this.isInitialConnect) {
-          reject(new Error('WebSocket connection error'));
+          reject(new Error("WebSocket connection error"));
         }
       };
 
@@ -163,17 +200,17 @@ class GeminiManager {
 
       this.ws.onclose = (event: any) => {
         const code = event?.code;
-        const reason = event?.reason || '(no reason)';
-        console.log(`[Gemini] WebSocket closed: code=${code}, reason=${reason}`);
+        const reason = event?.reason || "(no reason)";
+        sessionLog.warn("Gemini", "WebSocket closed", { code, reason });
 
         // Emit a close event so pending waiters (e.g. updateSession) can
         // fail fast instead of waiting for their 15 s timeout.
-        this.emitEvent('ws.closed', { code, reason });
+        this.emitEvent("ws.closed", { code, reason });
 
         const currentState = useConnectionStore.getState().connectionState;
-        if (currentState === 'connected' && !this.isReconnecting) {
-          useConnectionStore.getState().setConnectionState('failed');
-          useConnectionStore.getState().setNetworkStatus('offline');
+        if (currentState === "connected" && !this.isReconnecting) {
+          useConnectionStore.getState().setConnectionState("failed");
+          useConnectionStore.getState().setNetworkStatus("offline");
           if (this.onConnectionDropped) {
             this.onConnectionDropped();
           }
@@ -191,14 +228,23 @@ class GeminiManager {
     this.audioDataSubscription = micSource.addListener(
       (event: { data: string }) => {
         this.audioChunksReceived++;
-        // Log every 100th chunk (~every 10s) to verify events are arriving
-        if (this.audioChunksReceived % 100 === 1) {
-          console.log(
-            `[Gemini] Audio chunk #${this.audioChunksReceived}, len=${event.data?.length ?? 0}, ` +
-            `muted=${this.isMuted}, ws=${this.ws?.readyState}, setup=${this.isSetupDone}`,
-          );
+        // Sparse heartbeat — only when verbose. Otherwise mic activity is
+        // visible via the level meter + speech_started/transcript events.
+        if (this.audioChunksReceived % 200 === 1) {
+          sessionLog.debug("Gemini", "mic heartbeat", {
+            chunk: this.audioChunksReceived,
+            len: event.data?.length ?? 0,
+            muted: this.isMuted,
+            ws: this.ws?.readyState,
+            setup: this.isSetupDone,
+          });
         }
-        if (!this.isMuted && this.ws && this.ws.readyState === WebSocket.OPEN && this.isSetupDone) {
+        if (
+          !this.isMuted &&
+          this.ws &&
+          this.ws.readyState === WebSocket.OPEN &&
+          this.isSetupDone
+        ) {
           const dataLen = event.data?.length ?? 0;
           this.audioBytesSent += dataLen;
           this.audioPacketsSent += 1;
@@ -225,56 +271,92 @@ class GeminiManager {
   }
 
   // -------------------------------------------------------------------------
-  // Incoming message handler — translates Gemini events to OpenAI-style events
+  // Incoming message handler — translates Gemini wire events into the app's internal event names
   // -------------------------------------------------------------------------
 
   private async handleMessage(rawData: string | object): Promise<void> {
     let msg: any;
     try {
       let text: string;
-      if (typeof rawData === 'string') {
+      if (typeof rawData === "string") {
         text = rawData;
-      } else if (typeof (rawData as any)?.text === 'function') {
+      } else if (typeof (rawData as any)?.text === "function") {
         // Blob or Blob-like (duck-typed — instanceof Blob can fail in RN polyfills)
         text = await (rawData as any).text();
       } else if (rawData instanceof ArrayBuffer) {
         text = new TextDecoder().decode(rawData);
       } else {
-        console.warn('[Gemini] Unexpected message type:', typeof rawData, Object.prototype.toString.call(rawData));
+        sessionLog.warn("Gemini", "unexpected ws message type", {
+          type: typeof rawData,
+          tag: Object.prototype.toString.call(rawData),
+        });
         text = JSON.stringify(rawData);
       }
       msg = JSON.parse(text);
-    } catch (e) {
-      console.error('[Gemini] Failed to parse message:', e);
+    } catch (e: any) {
+      sessionLog.error("Gemini", "failed to parse message", {
+        message: e?.message,
+      });
       return;
     }
 
-    // Log message keys (skip noisy audio-only messages)
-    const keys = Object.keys(msg);
-    const hasAudioOnly =
-      msg.serverContent?.modelTurn?.parts?.every((p: any) => p.inlineData) &&
-      !msg.serverContent?.turnComplete &&
-      !msg.serverContent?.inputTranscription &&
-      !msg.serverContent?.outputTranscription;
-    if (!hasAudioOnly) {
-      console.log('[Gemini] MSG keys:', JSON.stringify(keys));
-      // Log full message for non-audio messages (helps debug setup issues)
-      if (!msg.serverContent) {
-        console.log('[Gemini] MSG full:', JSON.stringify(msg).substring(0, 500));
+    // Verbose-only raw dump. The default stream relies on structured
+    // events emitted below (setupComplete, toolCall, transcript, turnComplete)
+    // — those are what actually drive the session and they each log themselves.
+    if (sessionLog.isVerbose()) {
+      const hasAudioOnly =
+        msg.serverContent?.modelTurn?.parts?.every((p: any) => p.inlineData) &&
+        !msg.serverContent?.turnComplete &&
+        !msg.serverContent?.inputTranscription &&
+        !msg.serverContent?.outputTranscription;
+      if (!hasAudioOnly) {
+        sessionLog.debug("Gemini", "msg", { keys: Object.keys(msg) });
+        if (!msg.serverContent) {
+          sessionLog.debug("Gemini", "msg full", {
+            body: JSON.stringify(msg).slice(0, 500),
+          });
+        }
       }
     }
 
     // --- error → log and propagate ---
     if (msg.error) {
-      console.error('[Gemini] Server error:', JSON.stringify(msg.error));
-      this.emitEvent('error', msg.error);
+      sessionLog.error("Gemini", "server error", { error: msg.error });
+      this.emitEvent("error", msg.error);
+      return;
+    }
+
+    // --- sessionResumptionUpdate → cache the latest resumable handle ---
+    // The server periodically sends a new handle that represents the current
+    // session state. We keep only the most recent resumable one; on a drop,
+    // `updateSession` replays it in the reconnect setup (BUG 15 fix).
+    if (msg.sessionResumptionUpdate) {
+      const { newHandle, resumable } = msg.sessionResumptionUpdate;
+      if (resumable && newHandle) {
+        this.sessionResumptionHandle = newHandle;
+        sessionLog.debug("Gemini", "session resumption handle updated");
+      }
+      this.emitEvent("session.resumption_update", { resumable: !!resumable });
+      return;
+    }
+
+    // --- goAway → server is about to close this connection ---
+    // Sent with `timeLeft` before the server terminates (e.g. session age /
+    // maintenance). We log it and emit an event; the existing onclose →
+    // onConnectionDropped path drives the reconnect, which now resumes via the
+    // cached handle above. (GEMINI-API.md §9 / §17)
+    if (msg.goAway) {
+      sessionLog.warn("Gemini", "server goAway", {
+        time_left: msg.goAway.timeLeft,
+      });
+      this.emitEvent("ws.goAway", { timeLeft: msg.goAway.timeLeft });
       return;
     }
 
     // --- setupComplete → session.updated ---
     if (msg.setupComplete !== undefined) {
-      console.log('[Gemini] Setup complete');
-      this.emitEvent('session.updated', {});
+      sessionLog.event("Gemini", "setupComplete");
+      this.emitEvent("session.updated", {});
       return;
     }
 
@@ -282,19 +364,25 @@ class GeminiManager {
     if (msg.toolCall) {
       const functionCalls = msg.toolCall.functionCalls || [];
       for (const fc of functionCalls) {
-        const callId = fc.id || `fc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const callId =
+          fc.id || `fc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const name = fc.name;
         const args = fc.args || {};
 
+        sessionLog.event("Gemini", "toolCall received", {
+          name,
+          call_id: callId,
+          args,
+        });
         this.toolCallNames.set(callId, name);
 
         // Emit output_item.added so sessionManager can track the tool name
-        this.emitEvent('response.output_item.added', {
-          item: { type: 'function_call', call_id: callId, name },
+        this.emitEvent("response.output_item.added", {
+          item: { type: "function_call", call_id: callId, name },
         });
 
         // Emit function_call_arguments.done with serialised args
-        this.emitEvent('response.function_call_arguments.done', {
+        this.emitEvent("response.function_call_arguments.done", {
           call_id: callId,
           arguments: JSON.stringify(args),
         });
@@ -307,17 +395,19 @@ class GeminiManager {
       const sc = msg.serverContent;
 
       // Input transcription (user speech → evaluating transition)
+      // (Transcript content is logged in sessionManager's handler — keep this branch silent here.)
       if (sc.inputTranscription?.text) {
-        console.log('[User]:', sc.inputTranscription.text);
-        this.emitEvent('conversation.item.input_audio_transcription.completed', {
-          transcript: sc.inputTranscription.text,
-        });
+        this.emitEvent(
+          "conversation.item.input_audio_transcription.completed",
+          {
+            transcript: sc.inputTranscription.text,
+          },
+        );
       }
 
       // Output transcription (AI speech)
       if (sc.outputTranscription?.text) {
-        console.log('[AI]:', sc.outputTranscription.text);
-        this.emitEvent('response.audio_transcript.done', {
+        this.emitEvent("response.audio_transcript.done", {
           transcript: sc.outputTranscription.text,
         });
       }
@@ -327,22 +417,30 @@ class GeminiManager {
         for (const part of sc.modelTurn.parts) {
           if (part.inlineData?.data) {
             // Emit response.audio.delta so sessionManager can transition phases
-            this.emitEvent('response.audio.delta', {});
+            this.emitEvent("response.audio.delta", {});
+            // Skip playback if the user just hit End/Pause — the WS may
+            // still stream a few chunks during teardown and we don't
+            // want them to land in the AudioTrack after flush.
+            if (this.playbackHalted) continue;
             // Play the audio chunk through native AudioTrack
-            ExpoForegroundAudioModule.playAudioChunk(part.inlineData.data).catch((e: any) => {
-              console.error('[Gemini] Audio playback error:', e);
+            ExpoForegroundAudioModule.playAudioChunk(
+              part.inlineData.data,
+            ).catch((e: any) => {
+              sessionLog.error("Gemini", "audio playback error", {
+                message: e?.message,
+              });
             });
           }
           if (part.text) {
-            console.log('[Gemini] Text part:', part.text);
+            sessionLog.event("AI", "text part", { text: part.text });
           }
         }
       }
 
       // Turn complete → response.done
       if (sc.turnComplete) {
-        console.log('[Gemini] Turn complete');
-        this.emitEvent('response.done', {});
+        sessionLog.event("Gemini", "turnComplete → response.done");
+        this.emitEvent("response.done", {});
       }
     }
   }
@@ -353,7 +451,9 @@ class GeminiManager {
 
   /**
    * First call: sends the Gemini setup message (model, system instruction,
-   * tools, voice config, transcriptions) and waits for setupComplete.
+   * tools, voice config, transcriptions, context-window compression, and
+   * session resumption — replaying a cached handle when reconnecting) and
+   * waits for setupComplete.
    * Subsequent calls: no-op (Gemini config is immutable after setup).
    */
   async updateSession(config: {
@@ -361,16 +461,32 @@ class GeminiManager {
     tools?: any[];
     modalities?: string[];
     turn_detection?: any;
+    // BCP-47 (e.g. 'es-ES'). Accepted on the request shape so callers
+    // don't have to special-case the call site, but currently **dropped**
+    // before reaching the wire — see the comment inside this method.
+    languageCode?: string;
   }): Promise<void> {
     if (!this.isSetupDone) {
-      // Build Gemini setup payload
+      // Build Gemini setup payload.
+      // NOTE: `speechConfig.languageCode` is intentionally NOT forwarded —
+      // the `gemini-2.5-flash-native-audio-preview-*` model rejects the
+      // field at setup with WebSocket close code 1007 (`Unsupported
+      // language code 'es-ES' for model …`). Per Google's docs, the
+      // languageCode parameter only applies to half-cascade (text→TTS)
+      // models; the native-audio model auto-detects language from the
+      // system instruction + user audio. We therefore steer language
+      // entirely via the prompt's "Language: X ONLY" directive (see
+      // `src/config/prompts.ts`). Keep the param shape so we can re-enable
+      // forwarding if we ever switch back to a half-cascade model.
+      // See SESSION-FLOW.md §4.BUG 16.
+      void config.languageCode;
       const setup: any = {
         model: `models/${GEMINI_MODEL}`,
         generationConfig: {
-          responseModalities: ['AUDIO'],
+          responseModalities: ["AUDIO"],
           speechConfig: {
             voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Kore' },
+              prebuiltVoiceConfig: { voiceName: "Kore" },
             },
           },
         },
@@ -386,12 +502,28 @@ class GeminiManager {
         // talking.
         realtimeInputConfig: {
           automaticActivityDetection: {
-            startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
-            endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
+            startOfSpeechSensitivity: "START_SENSITIVITY_HIGH",
+            endOfSpeechSensitivity: "END_SENSITIVITY_HIGH",
             prefixPaddingMs: 300,
             silenceDurationMs: 800,
           },
         },
+        // Sliding-window context compression. Without it, a native-audio
+        // session hits a hard ~15-minute cap and the server terminates the
+        // connection; with it, the context window is trimmed automatically
+        // and the session can run effectively unbounded. (GEMINI-API.md §16)
+        contextWindowCompression: {
+          slidingWindow: {},
+        },
+        // Enable session resumption. Empty `{}` on a fresh session tells the
+        // server to start issuing `sessionResumptionUpdate` handles; on a
+        // reconnect we replay the last handle so the server restores the real
+        // conversation context instead of starting cold (the native fix for
+        // BUG 15). `sessionResumptionHandle` is only set after a drop — a
+        // fresh connect clears it (see `connect()`).
+        sessionResumption: this.sessionResumptionHandle
+          ? { handle: this.sessionResumptionHandle }
+          : {},
       };
 
       if (config.instructions) {
@@ -409,26 +541,35 @@ class GeminiManager {
       }
 
       const setupPayload = JSON.stringify({ setup });
-      console.log('[Gemini] Sending setup, payload length:', setupPayload.length);
-      console.log('[Gemini] Setup model:', setup.model);
-      console.log('[Gemini] Setup has tools:', !!(setup.tools));
-      console.log('[Gemini] Setup has systemInstruction:', !!(setup.systemInstruction));
-      console.log('[Gemini] Setup payload (first 1000 chars):', setupPayload.substring(0, 1000));
-      console.log('[Gemini] WS readyState:', this.ws?.readyState);
+      sessionLog.info("Gemini", "sending setup", {
+        model: setup.model,
+        tools: !!setup.tools,
+        systemInstruction: !!setup.systemInstruction,
+        resuming: !!this.sessionResumptionHandle,
+        payload_len: setupPayload.length,
+        ws_state: this.ws?.readyState,
+      });
+      sessionLog.debug("Gemini", "setup payload (1000)", {
+        body: setupPayload.slice(0, 1000),
+      });
       this.ws?.send(setupPayload);
 
       // Wait for setupComplete (emitted as session.updated), error, or WS close
       await new Promise<void>((resolve, reject) => {
         const cleanup = () => {
           clearTimeout(timeout);
-          this.off('session.updated', handler);
-          this.off('error', errorHandler);
-          this.off('ws.closed', closeHandler);
+          this.off("session.updated", handler);
+          this.off("error", errorHandler);
+          this.off("ws.closed", closeHandler);
         };
 
         const timeout = setTimeout(() => {
           cleanup();
-          reject(new Error('Gemini setup timeout — no setupComplete received within 15s'));
+          reject(
+            new Error(
+              "Gemini setup timeout — no setupComplete received within 15s",
+            ),
+          );
         }, 15000);
 
         const handler = () => {
@@ -443,14 +584,16 @@ class GeminiManager {
 
         const closeHandler = (event: any) => {
           cleanup();
-          reject(new Error(
-            `Gemini WebSocket closed during setup: code=${event.code}, reason=${event.reason}`
-          ));
+          reject(
+            new Error(
+              `Gemini WebSocket closed during setup: code=${event.code}, reason=${event.reason}`,
+            ),
+          );
         };
 
-        this.on('session.updated', handler);
-        this.on('error', errorHandler);
-        this.on('ws.closed', closeHandler);
+        this.on("session.updated", handler);
+        this.on("error", errorHandler);
+        this.on("ws.closed", closeHandler);
       });
 
       this.isSetupDone = true;
@@ -458,37 +601,43 @@ class GeminiManager {
     }
 
     // Subsequent calls are no-ops — emit session.updated so waiters resolve
-    this.emitEvent('session.updated', {});
+    this.emitEvent("session.updated", {});
   }
 
   // -------------------------------------------------------------------------
-  // Tool format conversion (OpenAI → Gemini)
+  // Tool format conversion (internal tool shape → Gemini)
   // -------------------------------------------------------------------------
 
-  private convertTool(openaiTool: any): any {
+  private convertTool(tool: any): any {
     return {
-      name: openaiTool.name,
-      description: openaiTool.description,
-      ...(openaiTool.parameters
-        ? { parameters: this.convertSchemaTypes(openaiTool.parameters) }
+      name: tool.name,
+      description: tool.description,
+      ...(tool.parameters
+        ? { parameters: this.convertSchemaTypes(tool.parameters) }
         : {}),
     };
   }
 
   private convertSchemaTypes(schema: any): any {
-    if (!schema || typeof schema !== 'object') return schema;
+    if (!schema || typeof schema !== "object") return schema;
     if (Array.isArray(schema)) return schema;
 
     const result: any = {};
     for (const [key, value] of Object.entries(schema)) {
-      if (key === 'type' && typeof value === 'string') {
+      if (key === "type" && typeof value === "string") {
         result.type = (value as string).toUpperCase();
-      } else if (key === 'properties' && typeof value === 'object' && value !== null) {
+      } else if (
+        key === "properties" &&
+        typeof value === "object" &&
+        value !== null
+      ) {
         result.properties = {};
-        for (const [propName, propSchema] of Object.entries(value as Record<string, any>)) {
+        for (const [propName, propSchema] of Object.entries(
+          value as Record<string, any>,
+        )) {
           result.properties[propName] = this.convertSchemaTypes(propSchema);
         }
-      } else if (key === 'items' && typeof value === 'object') {
+      } else if (key === "items" && typeof value === "object") {
         result.items = this.convertSchemaTypes(value);
       } else {
         result[key] = value;
@@ -498,11 +647,11 @@ class GeminiManager {
   }
 
   // -------------------------------------------------------------------------
-  // Messaging — same interface as webrtcManager
+  // Messaging
   // -------------------------------------------------------------------------
 
   /**
-   * No-op for OpenAI-specific data channel events (input_audio_buffer.clear etc.)
+   * No-op for legacy data-channel events the internal vocabulary emits but Gemini ignores (e.g. input_audio_buffer.clear).
    */
   sendEvent(_event: any): void {
     // Gemini doesn't use these events
@@ -510,32 +659,35 @@ class GeminiManager {
 
   async sendTextMessage(text: string): Promise<void> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn('[Gemini] WebSocket not open, cannot send text');
+      sessionLog.warn("Gemini", "WebSocket not open — cannot send text");
       return;
     }
 
     this.ws.send(
       JSON.stringify({
         clientContent: {
-          turns: [{ role: 'user', parts: [{ text }] }],
+          turns: [{ role: "user", parts: [{ text }] }],
           turnComplete: true,
         },
       }),
     );
 
     // Emit immediately — Gemini doesn't send an explicit confirmation
-    this.emitEvent('conversation.item.created', {});
+    this.emitEvent("conversation.item.created", {});
   }
 
   sendToolResult(callId: string, result: any): void {
-    const name = this.toolCallNames.get(callId) || '';
+    const name = this.toolCallNames.get(callId) || "";
 
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn('[Gemini] WebSocket not open, cannot send tool result');
+      sessionLog.warn("Gemini", "WebSocket not open — cannot send tool result");
       return;
     }
 
-    console.log(`[Gemini] Sending tool result for ${name} (${callId})`);
+    sessionLog.event("Gemini", "sending toolResponse", {
+      name,
+      call_id: callId,
+    });
 
     this.ws.send(
       JSON.stringify({
@@ -556,13 +708,13 @@ class GeminiManager {
     return new Promise((resolve, reject) => {
       const cleanup = () => {
         clearTimeout(timeout);
-        this.off('response.done', handler);
-        this.off('ws.closed', closeHandler);
+        this.off("response.done", handler);
+        this.off("ws.closed", closeHandler);
       };
 
       const timeout = setTimeout(() => {
         cleanup();
-        reject(new Error('Timed out waiting for response.done'));
+        reject(new Error("Timed out waiting for response.done"));
       }, 30000);
 
       const handler = () => {
@@ -572,13 +724,15 @@ class GeminiManager {
 
       const closeHandler = (event: any) => {
         cleanup();
-        reject(new Error(
-          `Gemini WebSocket closed while waiting for response: code=${event.code}, reason=${event.reason}`
-        ));
+        reject(
+          new Error(
+            `Gemini WebSocket closed while waiting for response: code=${event.code}, reason=${event.reason}`,
+          ),
+        );
       };
 
-      this.on('response.done', handler);
-      this.on('ws.closed', closeHandler);
+      this.on("response.done", handler);
+      this.on("ws.closed", closeHandler);
     });
   }
 
@@ -609,7 +763,7 @@ class GeminiManager {
     const handlers = this.eventHandlers.get(eventType) || [];
     handlers.forEach((handler) => handler(event));
 
-    const allHandlers = this.eventHandlers.get('all') || [];
+    const allHandlers = this.eventHandlers.get("all") || [];
     allHandlers.forEach((handler) => handler({ ...event, type: eventType }));
   }
 
@@ -618,8 +772,9 @@ class GeminiManager {
   // -------------------------------------------------------------------------
 
   setMicrophoneMuted(muted: boolean): void {
+    if (this.isMuted === muted) return;
     this.isMuted = muted;
-    console.log(`[Gemini] Microphone ${muted ? 'muted' : 'unmuted'}`);
+    sessionLog.event("mic", muted ? "muted" : "unmuted");
   }
 
   // -------------------------------------------------------------------------
@@ -627,10 +782,13 @@ class GeminiManager {
   // -------------------------------------------------------------------------
 
   isConnected(): boolean {
-    return useConnectionStore.getState().connectionState === 'connected';
+    return useConnectionStore.getState().connectionState === "connected";
   }
 
-  async getAudioStats(): Promise<{ bytesSent: number; packetsSent: number } | null> {
+  async getAudioStats(): Promise<{
+    bytesSent: number;
+    packetsSent: number;
+  } | null> {
     return {
       bytesSent: this.audioBytesSent,
       packetsSent: this.audioPacketsSent,
@@ -638,9 +796,41 @@ class GeminiManager {
   }
 
   async debugAudioTrackState(label: string): Promise<void> {
-    console.log(
-      `[Gemini] ${label} — ws=${this.ws?.readyState ?? 'null'}, muted=${this.isMuted}, setup=${this.isSetupDone}`,
-    );
+    sessionLog.debug("Gemini", `audio track state — ${label}`, {
+      ws: this.ws?.readyState ?? "null",
+      muted: this.isMuted,
+      setup: this.isSetupDone,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Audio control
+  // -------------------------------------------------------------------------
+
+  /**
+   * Immediately silence the audio player without disconnecting.
+   * Call on Pause/End Session so the tutor stops speaking right away.
+   * AudioTrack.MODE_STREAM stop() drains the buffer first — this flushes it.
+   *
+   * Also sets `playbackHalted` so any audio chunks that arrive between
+   * the flush and the eventual WS close are dropped instead of refilling
+   * the AudioTrack. Without this guard the tutor's voice resumes a
+   * fraction of a second later as late chunks land (BUG 6).
+   */
+  stopCurrentAudio(): void {
+    this.playbackHalted = true;
+    // Synchronous native flag flip — makes queued playAudioChunk calls
+    // no-op immediately, draining the AsyncFunction backlog without
+    // each chunk blocking on AudioTrack.write(). Without this, the
+    // flushAudioPlayer() below waits for ~8 seconds behind the queue
+    // and the user hears the tutor finish their sentence (BUG 6).
+    try {
+      ExpoForegroundAudioModule.haltAudioPlayer(true);
+    } catch (_e) {
+      /* native may not be loaded in unit tests */
+    }
+    sessionLog.event("Audio", "playback halted");
+    ExpoForegroundAudioModule.flushAudioPlayer().catch(() => {});
   }
 
   // -------------------------------------------------------------------------
@@ -665,12 +855,16 @@ class GeminiManager {
     this.audioBytesSent = 0;
     this.audioPacketsSent = 0;
     this.audioChunksReceived = 0;
+    this.playbackHalted = false;
   }
 
   private cleanup(): void {
     this.cleanupConnection();
     this.eventHandlers.clear();
     this.toolCallNames.clear();
+    // Full teardown is a session boundary — drop the resumption handle so the
+    // next session starts cold rather than trying to resume a dead session.
+    this.sessionResumptionHandle = null;
   }
 
   private sleep(ms: number): Promise<void> {
@@ -678,5 +872,5 @@ class GeminiManager {
   }
 }
 
-// Export singleton — same pattern as webrtcManager
+// Export singleton
 export const geminiManager = new GeminiManager();
