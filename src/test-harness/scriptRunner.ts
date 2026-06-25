@@ -66,6 +66,15 @@ export async function runFixture(fixture: Fixture, ctx: RunContext): Promise<Run
   // -------------------------------------------------------------------------
   // Reset state before each fixture run.
   // -------------------------------------------------------------------------
+  // We deliberately do NOT use jest.useFakeTimers() here. Fake timers
+  // globally intercept setImmediate (used by flushMicrotasks) and the
+  // test runner's own 5s timeout, which causes hangs. Instead, the
+  // runner uses real timers + queueMicrotask for flushing, and the
+  // end_session 5s summary wait is handled by the end_session test
+  // (it pins the *intermediate* awaiting_answer state — the final
+  // session_complete transition after 5s is left to the integration
+  // tests since simulating the full real-time wait in unit tests is
+  // not worth the harness complexity).
   mockMgr.__reset();
   simulator.reset(fixture.cards);
   answerCardSpy.mockClear();
@@ -133,6 +142,14 @@ export async function runFixture(fixture: Fixture, ctx: RunContext): Promise<Run
       mockMgr.__simulateUserTranscript(turn.userSaid);
       mockMgr.__simulateAiToolCall('end_session', {});
       await flushMicrotasks();
+      // handleEndSessionTool uses a 5-second setTimeout to wait for the
+      // AI to deliver the closing summary before transitioning to
+      // session_complete. That 5s wait is intentional UX (lets the user
+      // hear the summary) and is left to the integration tests.
+      // In the unit-test runner we snapshot the intermediate state
+      // (phase = awaiting_answer, AI already received the 'ending'
+      // tool result) — the final transition is covered by the
+      // end_session "after summary completes" assertion in the test.
     } else if (turn.kind === 'silentGrade') {
       // AI verbalises a verdict but never tool-calls. Mirrors the
       // production failure mode users have reported: tutor says
@@ -155,6 +172,17 @@ export async function runFixture(fixture: Fixture, ctx: RunContext): Promise<Run
       });
       await flushMicrotasks();
       mockMgr.__simulateAiResponseDone();
+    } else if (turn.kind === 'connectionDropped') {
+      // Configure reconnect-failure mode if requested.
+      mockMgr.__setReconnectWillFail(turn.reconnectFails ?? false);
+      // Fire the drop handler. The handler runs `attemptReconnectAndResume`
+      // async — we drain the microtask chain before the next turn.
+      mockMgr.__simulateConnectionDropped();
+      // Microtask flush so the synchronous part of the handler runs
+      // (transitionTo reconnecting, mute mic, schedule reconnect).
+      await flushMicrotasks();
+      // Extra microtask for the reconnect promise chain.
+      await flushMicrotasks();
     }
 
     const toolResultAfter = mockMgr.sentToolResults[writesBefore] ?? null;

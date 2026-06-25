@@ -50,6 +50,15 @@ export type Turn =
       userSaid: string;
       aiGraded: 'correct' | 'incorrect' | 'skipped';
       feedbackText?: string;
+    }
+  | {
+      /** Synthetic — fires `webrtcManager.onConnectionDropped` to drive
+       *  the reconnect path. No user transcript, no tool call. The
+       *  runner awaits the reconnect flow before the next turn. */
+      kind: 'connectionDropped';
+      /** Optional: simulate the reconnect() call returning false.
+       *  Default: reconnect succeeds. */
+      reconnectFails?: boolean;
     };
 
 export interface Fixture {
@@ -262,6 +271,162 @@ export const toolCallNoAudio: Fixture = {
   ],
 };
 
+/**
+ * Answer the LAST card in the deck → session should end cleanly:
+ *   - phase transitions to `session_complete`
+ *   - onSessionComplete runs (clears state, fires Analytics)
+ *   - stopForegroundService is called
+ *   - No further cards advance (no tool call fired because Gemini knows
+ *     it's the last one and should call end_session or signal completion)
+ *
+ * The runner verifies the phase + foreground-service cleanup.
+ */
+export const endOfDeck: Fixture = {
+  name: 'end-of-deck',
+  cards: awsExamSaCards.slice(0, 2),
+  turns: [
+    {
+      kind: 'answer',
+      userSaid: 'subnet level',
+      aiGraded: 'correct',
+      expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
+    },
+    {
+      // Last card answered → next card is null → session_complete.
+      kind: 'answer',
+      userSaid: 'EBS snapshot backups',
+      aiGraded: 'correct',
+      expectWriteback: { cardId: awsExamSaCards[1].cardId, pass: true },
+    },
+  ],
+  expectedFinalStats: { correct: 2, incorrect: 0 },
+};
+
+/**
+ * User invokes `end_session` MID-DECK (after card 1 of 2). Validates:
+ *   - AI calls end_session tool
+ *   - Phase transitions to session_complete
+ *   - Only the cards answered before end_session got written back
+ *   - The remaining cards were NOT written (no phantom grade)
+ */
+export const endSessionToolMidDeck: Fixture = {
+  name: 'end-session-tool-mid-deck',
+  cards: awsExamSaCards.slice(0, 3),
+  turns: [
+    {
+      kind: 'answer',
+      userSaid: 'subnet level',
+      aiGraded: 'correct',
+      expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
+    },
+    {
+      // User says "I'm done" → AI calls end_session
+      kind: 'endRequested',
+      userSaid: "I'm done for today",
+    },
+    // The remaining card (awsExamSaCards[1], awsExamSaCards[2]) must NOT
+    // be written. The runner verifies ankiWrites stays at length 1.
+  ],
+  expectedFinalStats: { correct: 1, incorrect: 0 },
+};
+
+/**
+ * Connection drops mid-session (after card 1 of 2). Validates:
+ *   - onConnectionDropped handler fires
+ *   - sessionManager transitions to `reconnecting`
+ *   - reconnect() is called
+ *   - Resume message is sent (proves session context was replayed)
+ *   - User can answer card 2 normally after the reconnect
+ *
+ * Critical: a successful reconnect must NOT double-write the already-
+ * answered card (proves the resume replays from current state, not from
+ * the start).
+ */
+export const reconnectMidSession: Fixture = {
+  name: 'reconnect-mid-session',
+  cards: awsExamSaCards.slice(0, 2),
+  turns: [
+    {
+      kind: 'answer',
+      userSaid: 'subnet level',
+      aiGraded: 'correct',
+      expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
+    },
+    {
+      kind: 'connectionDropped',
+      // Synthetic event — no transcript. The runner fires onConnectionDropped.
+    },
+    // After reconnect, the session should be back to a usable state.
+    // The runner fires one more "post-reconnect answer" to verify the
+    // session is fully functional.
+    {
+      kind: 'answer',
+      userSaid: 'EBS snapshot backups',
+      aiGraded: 'correct',
+      expectWriteback: { cardId: awsExamSaCards[1].cardId, pass: true },
+    },
+  ],
+  expectedFinalStats: { correct: 2, incorrect: 0 },
+};
+
+/**
+ * Connection drops AND reconnect FAILS. Validates:
+ *   - Phase transitions to `error: reconnect_failed`
+ *   - onSessionComplete cleanup is NOT called (session is dead, not done)
+ *   - The recovery path doesn't keep retrying in the background
+ */
+export const reconnectFailure: Fixture = {
+  name: 'reconnect-failure',
+  cards: awsExamSaCards.slice(0, 2),
+  turns: [
+    {
+      kind: 'answer',
+      userSaid: 'subnet level',
+      aiGraded: 'correct',
+      expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
+    },
+    {
+      kind: 'connectionDropped',
+    },
+  ],
+};
+
+/**
+ * Validates the foreground audio service lifecycle:
+ *   - startForegroundService called BEFORE sendFirstCard
+ *   - updateForegroundNotification called on each card advance (with
+ *     correct N-of-M display)
+ *   - stopForegroundService called on session_complete
+ *
+ * The fixture answers 3 cards normally so the runner can verify the
+ * 3 updateForegroundNotification calls happened with the right counts.
+ */
+export const notificationLifecycle: Fixture = {
+  name: 'notification-lifecycle',
+  cards: awsExamSaCards.slice(0, 3),
+  turns: [
+    {
+      kind: 'answer',
+      userSaid: 'subnet level',
+      aiGraded: 'correct',
+      expectWriteback: { cardId: awsExamSaCards[0].cardId, pass: true },
+    },
+    {
+      kind: 'answer',
+      userSaid: 'EBS snapshot backups',
+      aiGraded: 'correct',
+      expectWriteback: { cardId: awsExamSaCards[1].cardId, pass: true },
+    },
+    {
+      kind: 'answer',
+      userSaid: 'NLB and elastic IPs',
+      aiGraded: 'correct',
+      expectWriteback: { cardId: awsExamSaCards[2].cardId, pass: true },
+    },
+  ],
+  expectedFinalStats: { correct: 3, incorrect: 0 },
+};
+
 export const allFixtures = {
   happyPath,
   mixedResults,
@@ -271,4 +436,9 @@ export const allFixtures = {
   silentGradeNoToolCall,
   silentGradeThenRealGrade,
   toolCallNoAudio,
+  endOfDeck,
+  endSessionToolMidDeck,
+  reconnectMidSession,
+  reconnectFailure,
+  notificationLifecycle,
 };

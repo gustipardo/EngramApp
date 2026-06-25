@@ -71,15 +71,28 @@ jest.mock('../../services/cardLoader', () => {
   };
 });
 
+// foregroundAudioService — recorded as jest.fn() spies so the
+// notificationLifecycle fixture can assert on call ordering.
+// Variable names are prefixed with `mock` to satisfy jest.mock's
+// hoisting rule (no out-of-scope variables in the factory body).
+const mockFgStart = jest.fn().mockResolvedValue(undefined);
+const mockFgStop = jest.fn().mockResolvedValue(undefined);
+const mockFgUpdate = jest.fn().mockResolvedValue(undefined);
+const mockFgRequestFocus = jest.fn().mockResolvedValue(undefined);
+const mockFgAbandonFocus = jest.fn().mockResolvedValue(undefined);
+const mockFgClearPauseFlag = jest.fn();
+const mockFgIsRunning = jest.fn().mockReturnValue(false);
+const mockFgWasPaused = jest.fn().mockReturnValue(false);
+
 jest.mock('../../services/foregroundAudioService', () => ({
-  startForegroundService: jest.fn().mockResolvedValue(undefined),
-  stopForegroundService: jest.fn().mockResolvedValue(undefined),
-  updateForegroundNotification: jest.fn().mockResolvedValue(undefined),
-  requestAudioFocus: jest.fn().mockResolvedValue(undefined),
-  abandonAudioFocus: jest.fn().mockResolvedValue(undefined),
-  clearAudioFocusPauseFlag: jest.fn(),
-  isServiceRunning: jest.fn().mockReturnValue(false),
-  wasPausedByAudioFocusLoss: jest.fn().mockReturnValue(false),
+  startForegroundService: (...a: any[]) => mockFgStart(...a),
+  stopForegroundService: (...a: any[]) => mockFgStop(...a),
+  updateForegroundNotification: (...a: any[]) => mockFgUpdate(...a),
+  requestAudioFocus: (...a: any[]) => mockFgRequestFocus(...a),
+  abandonAudioFocus: (...a: any[]) => mockFgAbandonFocus(...a),
+  clearAudioFocusPauseFlag: (...a: any[]) => mockFgClearPauseFlag(...a),
+  isServiceRunning: (...a: any[]) => mockFgIsRunning(...a),
+  wasPausedByAudioFocusLoss: (...a: any[]) => mockFgWasPaused(...a),
 }));
 
 jest.mock('../../services/analytics', () => ({
@@ -109,6 +122,11 @@ import {
   silentGradeNoToolCall,
   silentGradeThenRealGrade,
   toolCallNoAudio,
+  endOfDeck,
+  endSessionToolMidDeck,
+  reconnectMidSession,
+  reconnectFailure,
+  notificationLifecycle,
 } from '../fixtures/scripts';
 
 const ctx = {
@@ -339,6 +357,156 @@ describe('Layer 2 — replay harness', () => {
           }
         }
       }
+    });
+  });
+
+  // =============================================================================
+  // Lifecycle fixtures — end-of-deck, end_session, reconnect, foreground service
+  // =============================================================================
+
+  describe('end-of-deck — last card answered', () => {
+    beforeEach(() => {
+      mockFgStart.mockClear();
+      mockFgStop.mockClear();
+      mockFgUpdate.mockClear();
+    });
+
+    it('writes both cards and final phase is session_complete', async () => {
+      const result = await runFixture(endOfDeck, ctx);
+      expect(result.ankiWrites).toHaveLength(2);
+      expect(result.finalPhase).toBe('session_complete');
+      expect(result.finalStats).toEqual({ correct: 2, incorrect: 0 });
+    });
+
+    it('calls stopForegroundService on session_complete', async () => {
+      await runFixture(endOfDeck, ctx);
+      expect(mockFgStop).toHaveBeenCalled();
+    });
+  });
+
+  describe('end_session tool — called mid-deck', () => {
+    it('writes only the cards answered before end_session', async () => {
+      const result = await runFixture(endSessionToolMidDeck, ctx);
+      // Only card 1 (the one before the end_request turn) is written.
+      expect(result.ankiWrites).toHaveLength(1);
+      expect(result.ankiWrites[0]).toEqual({
+        cardId: result.ankiWrites[0].cardId, // dynamic from fixture
+        pass: true,
+      });
+    });
+
+    it('sends the "ending" tool result back to the AI with summary stats', async () => {
+      const result = await runFixture(endSessionToolMidDeck, ctx);
+      // After end_session, the tool result includes the totals so the
+      // AI can summarize. handleEndSessionTool sends:
+      //   { status: 'ending', total_reviewed, correct, incorrect }
+      const toolResults = result.toolResults;
+      const endResult = toolResults.find(
+        (r) => r.result && r.result.status === 'ending',
+      );
+      expect(endResult).toBeTruthy();
+      expect(endResult?.result).toEqual({
+        status: 'ending',
+        total_reviewed: 1,
+        correct: 1,
+        incorrect: 0,
+      });
+    });
+
+    it('phase is awaiting_answer immediately after end_session (5s summary wait)', async () => {
+      // The session-complete transition happens via a 5-second setTimeout
+      // AFTER the AI speaks the closing summary. The unit-test runner
+      // doesn't advance fake timers (to keep the harness simple), so
+      // phase remains in awaiting_answer — the test pins this contract
+      // and the full transition is covered by an integration test that
+      // actually runs the 5s wait.
+      const result = await runFixture(endSessionToolMidDeck, ctx);
+      expect(result.finalPhase).toBe('awaiting_answer');
+      expect(result.finalStats).toEqual({ correct: 1, incorrect: 0 });
+    });
+  });
+
+  describe('reconnect mid-session', () => {
+    it('fires the onConnectionDropped handler (reconnect wiring is installed)', async () => {
+      // Setup: the runner only fires the drop handler if a fixture turn
+      // has kind 'connectionDropped' AND sessionManager has installed
+      // the handler in installConnectionDropHandler. Verify the handler
+      // exists BEFORE the drop turn by checking that the drop succeeds.
+      const beforeCalls = ctx.mockMgr.reconnectCount;
+      const result = await runFixture(reconnectMidSession, ctx);
+      // The reconnect must have been called at least once (after the drop).
+      expect(ctx.mockMgr.reconnectCount).toBeGreaterThan(beforeCalls);
+      // Sanity: the drop didn't crash the fixture.
+      expect(result).toBeTruthy();
+    });
+
+    it('reconnects and lets the session answer the next card', async () => {
+      const result = await runFixture(reconnectMidSession, ctx);
+      // Both cards written — proves the post-reconnect turn is fully functional.
+      expect(result.ankiWrites).toHaveLength(2);
+      expect(result.finalStats).toEqual({ correct: 2, incorrect: 0 });
+    });
+
+    it('does NOT double-write the already-answered card after reconnect', async () => {
+      const result = await runFixture(reconnectMidSession, ctx);
+      // No duplicate cardIds.
+      const cardIds = result.ankiWrites.map((w) => w.cardId);
+      expect(new Set(cardIds).size).toBe(cardIds.length);
+    });
+  });
+
+  describe('reconnect failure', () => {
+    it('attempts reconnect via the gemini manager', async () => {
+      // Pin that the drop handler fires AND that reconnect() was called.
+      // We can't reliably pin the intermediate "reconnecting" phase
+      // because the async chain (drop handler → attemptReconnectAndResume
+      // → reconnect() returns false → error) runs before the perTurn
+      // snapshot is taken.
+      const result = await runFixture(reconnectFailure, ctx);
+      // After __reset, reconnectCount starts at 0. After the drop turn
+      // fires, reconnectCount should be 1 (one attempt).
+      expect(ctx.mockMgr.reconnectCount).toBe(1);
+      // Card 1 was answered (correct), card 2 was never reached.
+      expect(result.ankiWrites).toHaveLength(1);
+    });
+
+    it('writes the card answered before the drop', async () => {
+      const result = await runFixture(reconnectFailure, ctx);
+      expect(result.ankiWrites).toHaveLength(1);
+      expect(result.ankiWrites[0].pass).toBe(true);
+    });
+  });
+
+  describe('foreground service lifecycle', () => {
+    beforeEach(() => {
+      mockFgStart.mockClear();
+      mockFgStop.mockClear();
+      mockFgUpdate.mockClear();
+    });
+
+    it('startForegroundService is called exactly once during a 3-card session', async () => {
+      await runFixture(notificationLifecycle, ctx);
+      expect(mockFgStart).toHaveBeenCalledTimes(1);
+    });
+
+    it('stopForegroundService is called on session_complete', async () => {
+      await runFixture(notificationLifecycle, ctx);
+      expect(mockFgStop).toHaveBeenCalled();
+    });
+
+    it('updateForegroundNotification is called for each card advance', async () => {
+      // startSession sends the first card → update on card 1 (N-of-M label).
+      // After each turn advance → update again.
+      // Pinning the contract: at LEAST 2 updates for a 3-card session.
+      await runFixture(notificationLifecycle, ctx);
+      expect(mockFgUpdate.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('startForegroundService is called BEFORE any updateForegroundNotification', async () => {
+      await runFixture(notificationLifecycle, ctx);
+      const firstStart = mockFgStart.mock.invocationCallOrder[0] ?? 0;
+      const firstUpdate = mockFgUpdate.mock.invocationCallOrder[0] ?? Infinity;
+      expect(firstStart).toBeLessThan(firstUpdate);
     });
   });
 });

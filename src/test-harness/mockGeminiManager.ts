@@ -56,10 +56,19 @@ export class MockGeminiManager {
     return true;
   }
 
+  /**
+   * reconnect() — returns false if `_reconnectWillFail` is set (via
+   * `__setReconnectWillFail(true)`). Tests can simulate a connection
+   * drop + reconnect failure to drive the `error: reconnect_failed`
+   * branch in sessionManager.
+   */
   async reconnect(): Promise<boolean> {
     this.reconnectCount++;
+    if (this._reconnectWillFail) return false;
     return true;
   }
+
+  private _reconnectWillFail = false;
 
   disconnect(): void {
     this.disconnectCount++;
@@ -142,6 +151,31 @@ export class MockGeminiManager {
       arguments: JSON.stringify(args),
     });
     return id;
+  }
+
+  /**
+   * Simulate the WebSocket connection dropping mid-session. Fires the
+   * `onConnectionDropped` callback that sessionManager installed via
+   * `installConnectionDropHandler`. The callback then triggers the
+   * full reconnect + resume flow.
+   *
+   * Returns true if a handler was registered and fired. Tests should
+   * check this to verify the wiring is in place; `false` means
+   * sessionManager hasn't installed a drop handler yet (e.g. the
+   * fixture called this before startSession).
+   */
+  __simulateConnectionDropped(): boolean {
+    if (!this.onConnectionDropped) return false;
+    this.onConnectionDropped();
+    return true;
+  }
+
+  /**
+   * Simulate a reconnect FAILURE (reconnect() returns false).
+   * Use this to test the `error: reconnect_failed` branch.
+   */
+  __setReconnectWillFail(willFail: boolean): void {
+    this._reconnectWillFail = willFail;
   }
 
   /**

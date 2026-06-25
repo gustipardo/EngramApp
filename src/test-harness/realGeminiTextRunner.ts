@@ -24,7 +24,13 @@ import {
 import type { Fixture, Turn } from './fixtures/scripts';
 import type { AnkiCard } from '../types/anki';
 
-const GEMINI_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
+// Default to the production model. Text-mode tests against the
+// native-audio-only model will time out on setupComplete because that
+// model only accepts AUDIO modality. Override via GEMINI_L3_MODEL env.
+const DEFAULT_L3_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
+// A text-friendly fallback. Known-good for text-mode Live API.
+// Set GEMINI_L3_MODEL=gemini-live-2.5-flash-preview to use it.
+const L3_MODEL = process.env.GEMINI_L3_MODEL ?? DEFAULT_L3_MODEL;
 
 export interface RunnerResult {
   toolCalls: Array<{ name: string; args: any }>;
@@ -137,7 +143,7 @@ export async function runFixtureAgainstRealGemini(
     setupResolver = resolve;
     const setup = {
       setup: {
-        model: `models/${GEMINI_MODEL}`,
+        model: `models/${L3_MODEL}`,
         generationConfig: { responseModalities: ['TEXT'] },
         systemInstruction: {
           parts: [{
@@ -167,38 +173,70 @@ export async function runFixtureAgainstRealGemini(
   let runningStats = { correct: 0, incorrect: 0 };
 
   for (const turn of fixture.turns) {
-    if (turn.kind !== 'answer') {
-      // Override / endRequested are out of scope for the text-mode L3
-      // runner — they're already covered deterministically by Layer 2.
+    if (turn.kind === 'silentGrade' || turn.kind === 'toolCallNoAudio' || turn.kind === 'connectionDropped') {
+      // These fixture kinds are about runner/UI behavior, not AI behavior.
+      // The AI is supposed to ALWAYS tool-call when given a real answer;
+      // these fixtures are tested deterministically at Layer 2.
+      // Record a placeholder and skip.
       result.perTurn.push({ turn, matched: true });
       continue;
     }
 
     sendUserText(ws, turn.userSaid);
 
-    // Wait for AI tool call (we expect evaluate_and_move_next).
+    // Wait for AI tool call.
     const tc = await waitForToolCall(turnTimeoutMs);
     if (!tc) {
+      const expected =
+        turn.kind === 'answer'
+          ? turn.aiGraded
+          : turn.kind === 'override'
+          ? 'override_evaluation'
+          : 'end_session';
       result.perTurn.push({
         turn,
-        expectedGrade: turn.aiGraded,
+        expectedGrade: expected,
         observedGrade: '<no_tool_call>',
         matched: false,
       });
       break;
     }
 
-    const grade = tc.args?.user_response_quality;
-    const matched = grade === turn.aiGraded;
-    if (grade === 'correct') runningStats.correct++;
-    else if (grade === 'incorrect') runningStats.incorrect++;
-
-    result.perTurn.push({
-      turn,
-      expectedGrade: turn.aiGraded,
-      observedGrade: grade,
-      matched,
-    });
+    let matched = false;
+    if (turn.kind === 'answer') {
+      const grade = tc.args?.user_response_quality;
+      matched = grade === turn.aiGraded;
+      if (grade === 'correct') runningStats.correct++;
+      else if (grade === 'incorrect') runningStats.incorrect++;
+      result.perTurn.push({
+        turn,
+        expectedGrade: turn.aiGraded,
+        observedGrade: grade,
+        matched,
+      });
+    } else if (turn.kind === 'override') {
+      // For override, we only verify the AI called the right tool —
+      // the exact result depends on the AI's reasoning about the
+      // previous card.
+      matched = tc.name === 'override_evaluation';
+      result.perTurn.push({
+        turn,
+        expectedGrade: `tool=${tc.name}`,
+        observedGrade: tc.name,
+        matched,
+      });
+    } else if (turn.kind === 'endRequested') {
+      // For end_session, just verify the AI honored the request.
+      matched = tc.name === 'end_session';
+      result.perTurn.push({
+        turn,
+        expectedGrade: 'tool=end_session',
+        observedGrade: tc.name,
+        matched,
+      });
+      // Don't try to advance — session ends here.
+      break;
+    }
 
     // Reply with tool result so the AI can move on to the next card.
     cardIdx++;
