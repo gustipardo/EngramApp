@@ -1006,6 +1006,42 @@ const emptyTurnComplete = JSON.stringify({
 
 ---
 
+### BUG 17 — Foreground notification reads "Card N of N" instead of "Card N of <deck total>" **[FIXED 2026-06-25]**
+
+**Status:** Fixed. Deterministic — happened on every advance under the v3b architecture. Reporter: user, session 11 (2026-06-25). Same family as BUG 10 / BUG 11 (a `cache.length` leak), this time in the phone-call-style foreground notification.
+
+**Symptom (verbatim):**
+
+> The notification is not working properly since when a session is running it says card 1 of 1, then card 2 of 2 then card 3 of 3 and so on when you continue resolving flashcards but should be card 1 of 323 for example.
+
+**Root cause:**
+
+The per-advance notification update in `handleEvaluateAndMoveNext` sourced the total from `getTotalCardCount()`:
+
+```ts
+// App/src/services/sessionManager.ts (pre-fix)
+const total = getTotalCardCount(); // cardLoader → useCardCacheStore.cards.length
+const completed = stats.correct + stats.incorrect;
+updateForegroundNotification(
+  "Voice Study Session",
+  `Card ${completed + 1} of ${total}`,
+);
+```
+
+Under BUG 5 v3b (refill-from-scheduler) the cache only ever holds the cards loaded so far, so `cards.length === completed + 1` on every turn → the denominator tracked the numerator → "Card 1 of 1, Card 2 of 2, …". The same leak sat in the post-reconnect `resumeAfterReconnect` path, where the cache size was also fed to `configureAISession` (so a resumed session's AI prompt would have inherited the wrong count too).
+
+Note the session-start notification (line ~306) was already correct — it used the local `dueAtStart` snapshot. Only the per-advance and resume paths leaked.
+
+**Fix:**
+
+Both sites now read the AnkiDroid due-count snapshot taken at `startSession` (`useSessionStore.totalDueAtStart`) — the same source the start notification and `remaining_cards` (BUG 10 v.A) already use. `getTotalCardCount` is no longer referenced in `sessionManager`; the import was dropped. This is the count-source rule in the Tutor Utterance Contract (§3a): the total must be `totalDueAtStart`, never `cache.length`.
+
+**Files touched:** `App/src/services/sessionManager.ts` (per-advance notification + `resumeAfterReconnect`), `App/src/services/__tests__/sessionManager.test.ts` (regression test: notification body uses `totalDueAtStart` even when the cache size diverges).
+
+**Verification:** Full Jest suite 429 passed. Verified live on the Pixel 9 by polling `dumpsys notification` through a scenario run — the body stepped `Card 1 of 10 → Card 7 of 10` with the denominator pinned at the deck total. Commit `bdf1190`.
+
+---
+
 ## 8. Session Start Checklist (manual verification)
 
 Run this against the real device/emulator after each change:
