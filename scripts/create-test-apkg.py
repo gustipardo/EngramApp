@@ -13,8 +13,8 @@ Usage:
 Output:
     src/test-harness/fixtures/<profile-name>.apkg
 
-Card format: Basic (Front / Back), all cards set to due=today so they appear
-immediately without waiting for AnkiDroid's scheduler.
+Card format: Basic (Front / Back), all cards created as NEW (queue=0) so the
+scheduler serves them immediately on any collection, regardless of its crt.
 """
 
 import os, sys, sqlite3, zipfile, json, time, struct, hashlib
@@ -306,10 +306,15 @@ def build_apkg(profile_key: str) -> str:
             "INSERT INTO notes VALUES(?,?,?,?,-1,'',?,?,?,0,'');",
             (note_id, guid, model_id, now, flds, front, _checksum(front)),
         )
-        # type=2 (review), queue=2 (review), due=today → immediately due
+        # type=0 (new), queue=0 (new), due=position (1..N).
+        # NEW cards are served by the scheduler immediately and — unlike review
+        # cards — their `due` is a queue position, NOT a day number relative to
+        # the collection's `crt`. Review cards (queue=2, due=now//86400) land
+        # ~20000 days in the future on any real collection (whose crt differs
+        # from this file's), so the deck shows "0 due". New cards avoid that.
         c.execute(
-            "INSERT INTO cards VALUES(?,?,?,0,?,-1,2,2,?,10,2500,5,0,0,0,0,0,'');",
-            (card_id, note_id, deck_id, now, today),
+            "INSERT INTO cards VALUES(?,?,?,0,?,-1,0,0,?,0,0,0,0,0,0,0,0,'');",
+            (card_id, note_id, deck_id, now, i + 1),
         )
 
     conn.commit()

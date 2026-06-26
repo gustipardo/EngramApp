@@ -120,31 +120,25 @@ wait_for_marker() {
 
 section "1 — Import deck: $SCENARIO_DECK"
 
-# Known limitation (2026-06-25): on Android ≥14 Play Store images,
-# `am start -d file://…` strips the URI (scoped storage). AnkiDroid logs
-# "Data: none" and "File import failed". The deck row never appears in
-# Engram's deck-select, and STEP 7 times out. The script still proceeds
-# to launch the app and wait — assertions will fail loudly.
-# Fix path: install `system-images;android-34;google_apis;x86_64` and
-# use the rootable AVD. See DEBUGGING.md §12.
+# Android ≥14 (incl. the physical Pixel 9 on Android 17) strips `am start -d
+# file://…` under scoped storage, so the documented file:// import fails.
+# import-deck.sh works around it with a MediaStore content:// URI (see memory
+# `ankidroid-emulator-import-workaround`). Set SKIP_IMPORT=1 to reuse a deck
+# already in AnkiDroid (faster when re-running scenarios back to back).
 
-log "Pushing .apkg to device..."
-adb -s "$ANDROID_SERIAL" push "$APKG" /sdcard/Download/"${SCENARIO_PROFILE}.apkg"
+if [[ "${SKIP_IMPORT:-0}" == "1" ]]; then
+    log "SKIP_IMPORT=1 — assuming '$SCENARIO_DECK' is already in AnkiDroid."
+else
+    log "Importing via MediaStore content:// (import-deck.sh)..."
+    bash "$SCRIPT_DIR/import-deck.sh" "$SCENARIO_PROFILE" || \
+        warn "import-deck.sh returned non-zero — continuing (deck may already exist)."
+fi
 
-log "Triggering AnkiDroid import..."
-adb -s "$ANDROID_SERIAL" shell am start \
-    -a android.intent.action.VIEW \
-    -d "file:///sdcard/Download/${SCENARIO_PROFILE}.apkg" \
-    -t "application/apkg" \
-    -n "com.ichi2.anki/.IntentHandler" 2>/dev/null || true
-
-sleep 4   # AnkiDroid import completes asynchronously
-
-# Screenshot: confirm AnkiDroid imported the deck
+# Screenshot: confirm AnkiDroid state after import
 adb -s "$ANDROID_SERIAL" shell screencap -p /sdcard/engram-screenshot.png
 adb -s "$ANDROID_SERIAL" pull /sdcard/engram-screenshot.png \
     "$SCREENSHOTS_DIR/${RUN_ID}-after-import.png" >/dev/null 2>&1 || true
-ok "Deck imported. Screenshot: $SCREENSHOTS_DIR/${RUN_ID}-after-import.png"
+ok "Deck ready. Screenshot: $SCREENSHOTS_DIR/${RUN_ID}-after-import.png"
 
 # ── Step 2: Clear logcat + start capture ─────────────────────────────────────
 
