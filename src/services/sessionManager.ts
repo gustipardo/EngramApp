@@ -1,4 +1,4 @@
-import { PermissionsAndroid } from "react-native";
+import { PermissionsAndroid, Platform } from "react-native";
 import { realtimeManager as webrtcManager } from "./realtimeManager";
 import {
   loadDueCards,
@@ -277,21 +277,27 @@ class SessionManager {
       this.installConnectionDropHandler();
       this.subscribeToConnectionState();
 
-      // Guard: RECORD_AUDIO must be granted before starting the mic foreground
-      // service. On targetSDK ≥ 34 Android throws a process-killing SecurityException
-      // if the permission is absent — the try/catch below cannot catch it. Throw a
-      // friendly JS error here instead so session.tsx surfaces it to the user.
-      const hasMicPermission = await PermissionsAndroid.check(
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-      );
+      // Mic permission is requested HERE — at session start — so the user
+      // sees the standard Android popup the first time they enter a deck
+      // (the onboarding flow no longer asks upfront). RECORD_AUDIO must be
+      // granted before starting the mic foreground service: on targetSDK ≥ 34
+      // Android throws a process-killing SecurityException if it's absent, and
+      // the try/catch below cannot catch it. So request → re-check → throw a
+      // friendly JS error only if the user actually denied.
+      const hasMicPermission = await this.ensureMicPermission();
       if (!hasMicPermission) {
         throw Object.assign(
           new Error(
-            "Microphone permission is required. Grant it in Settings → Apps → Engram → Permissions and try again.",
+            "Microphone access is needed to study by voice. Tap Try Again and allow it, or enable it in Settings → Apps → Engram → Permissions.",
           ),
           { code: "missing_mic_permission" },
         );
       }
+
+      // Notifications power the phone-call-style in-session banner (pause/end
+      // when minimized). Best-effort: request once, never block the session on
+      // the outcome — a denied notification only costs the background banner.
+      await this.ensureNotificationsPermission();
 
       // Start foreground service NOW — before sendFirstCard. The phone-call-style
       // notification needs to be live the moment the user commits to a session, not
@@ -337,6 +343,58 @@ class SessionManager {
       stopAudioLevelTracking();
       transitionTo("error", "start_failed");
       throw error;
+    }
+  }
+
+  /**
+   * Ensure RECORD_AUDIO. Returns true if already granted, otherwise fires the
+   * standard Android permission popup and returns the user's decision. Never
+   * throws — caller decides what to do with a denial.
+   */
+  private async ensureMicPermission(): Promise<boolean> {
+    if (Platform.OS !== "android") return true;
+    const already = await PermissionsAndroid.check(
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+    );
+    if (already) return true;
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      {
+        title: "Microphone access",
+        message:
+          "Engram needs your microphone to hear your spoken answers during a voice study session.",
+        buttonPositive: "Allow",
+        buttonNegative: "Not now",
+      },
+    );
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  }
+
+  /**
+   * Best-effort POST_NOTIFICATIONS request (Android 13+). Powers the
+   * in-session pause/end banner when the app is backgrounded. Never blocks
+   * the session — a denial only costs the background banner.
+   */
+  private async ensureNotificationsPermission(): Promise<void> {
+    if (Platform.OS !== "android") return;
+    if (typeof Platform.Version === "number" && Platform.Version < 33) return;
+    try {
+      const already = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+      );
+      if (already) return;
+      await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+        {
+          title: "Notifications",
+          message:
+            "Engram shows a phone-call-style banner during a session so you can pause or end it from anywhere.",
+          buttonPositive: "Allow",
+          buttonNegative: "Not now",
+        },
+      );
+    } catch {
+      /* best-effort — ignore */
     }
   }
 

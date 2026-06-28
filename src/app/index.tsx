@@ -1,9 +1,7 @@
 import { useEffect } from "react";
-import { Redirect, router } from "expo-router";
+import { Redirect } from "expo-router";
 import Constants from "expo-constants";
 import { useSettingsStore } from "../stores/useSettingsStore";
-import { useAuthStore } from "../stores/useAuthStore";
-import { requiresAuth } from "../config/env";
 
 export default function Index() {
   const onboardingCompleted = useSettingsStore((s) => s.onboardingCompleted);
@@ -12,7 +10,6 @@ export default function Index() {
   );
   const skipOnboarding: boolean =
     (Constants.expoConfig?.extra as any)?.skipOnboarding ?? false;
-  const { isAuthenticated, isLoading } = useAuthStore();
 
   // Dev-only: AUTO_SKIP_ONBOARDING=true in .env marks onboarding done
   // on first mount so pm clear + relaunch (used by test-flow.sh) doesn't
@@ -23,17 +20,9 @@ export default function Index() {
     }
   }, []);
 
-  // Wait for Firebase to resolve auth state before deciding where to redirect.
-  // In bypass mode (dev default) this resolves synchronously, so no flash.
-  if (requiresAuth() && isLoading) {
-    return null;
-  }
-
-  // Auth gate: unauthenticated users go to sign-in.
-  if (requiresAuth() && !isAuthenticated) {
-    return <Redirect href="/(onboarding)/sign-in" />;
-  }
-
+  // Flow: onboarding (AnkiDroid setup only) → deck list. Auth is NOT a launch
+  // gate anymore — the deck list is browsable signed-out; login is requested
+  // when the user actually enters a deck (see deck-select.handleSelectDeck).
   if (onboardingCompleted || skipOnboarding) {
     return <Redirect href="/(main)/deck-select" />;
   }

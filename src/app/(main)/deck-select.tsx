@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Constants from "expo-constants";
 import {
+  Animated,
   View,
   Text,
   Pressable,
@@ -16,6 +17,7 @@ import {
   KeyboardAvoidingView,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
+import Svg, { Path } from "react-native-svg";
 import {
   useSettingsStore,
   DEFAULT_DECK_LANGUAGE,
@@ -24,6 +26,7 @@ import { useSessionStore } from "../../stores/useSessionStore";
 import { ankiBridge } from "../../native/ankiBridge";
 import { requiresPayment, requiresAuth } from "../../config/env";
 import { useTrialStore } from "../../stores/useTrialStore";
+import { useAuthStore } from "../../stores/useAuthStore";
 import { signOut } from "../../services/authService";
 import { AnalyticsEvents } from "../../services/analytics";
 import type { DeckInfo } from "../../types/anki";
@@ -152,6 +155,7 @@ export default function DeckSelectScreen() {
   const [syncing, setSyncing] = useState(false);
   const trialStatus = useTrialStore((s) => s.status);
   const refreshTrialStatus = useTrialStore((s) => s.refresh);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   // Unified deck-settings sheet (language + tutor instructions). Replaces
   // the standalone instructions modal — same surface, more obvious entry
   // point via the gear icon on each row.
@@ -176,6 +180,15 @@ export default function DeckSelectScreen() {
 
   const loadDecks = useCallback(async () => {
     try {
+      // Guard: if AnkiDroid permission was revoked (e.g. after pm clear or
+      // settings change), send the user to the permissions screen rather than
+      // showing the dead-end "Cannot Load Decks" error.
+      const hasPermission = await ankiBridge.hasApiPermission();
+      if (!hasPermission) {
+        router.replace("/(onboarding)/permissions");
+        return;
+      }
+
       const deckInfos = await ankiBridge.getDeckInfo();
 
       if (deckInfos.length === 0) {
@@ -236,8 +249,11 @@ export default function DeckSelectScreen() {
   async function handleSignOut() {
     try {
       await signOut();
-      useSettingsStore.getState().setOnboardingCompleted(false);
-      router.replace("/(onboarding)");
+      // Clear stale trial status — it belongs to the signed-out user
+      useTrialStore.setState({ status: null });
+      // Go directly to sign-in. Don't touch onboardingCompleted — AnkiDroid
+      // setup is still done; the user just needs to log back in.
+      router.replace("/(onboarding)/sign-in");
     } catch (err) {
       console.error("Sign-out failed:", err);
     }
@@ -260,7 +276,18 @@ export default function DeckSelectScreen() {
   }
 
   function handleSelectDeck(deckName: string) {
-    // Block session start if trial expired and no subscription
+    AnalyticsEvents.deckSelected(deckName);
+    setSelectedDeck(deckName);
+
+    // Auth gate lives HERE now (not at app launch): the deck list is
+    // browsable signed-out, but entering a deck requires login. Sign-in then
+    // continues to the trial-started screen and on into this deck's session.
+    if (requiresAuth() && !isAuthenticated) {
+      router.push("/(onboarding)/sign-in");
+      return;
+    }
+
+    // Block session start if trial expired and no subscription.
     if (
       trialStatus &&
       !trialStatus.isActive &&
@@ -271,8 +298,6 @@ export default function DeckSelectScreen() {
       return;
     }
 
-    AnalyticsEvents.deckSelected(deckName);
-    setSelectedDeck(deckName);
     router.push("/(main)/session");
   }
 
@@ -531,7 +556,7 @@ export default function DeckSelectScreen() {
                 {darkMode ? "Light" : "Dark"}
               </Text>
             </Pressable>
-            {requiresAuth() && (
+            {requiresAuth() && isAuthenticated && (
               <Pressable
                 onPress={handleSignOut}
                 style={{
@@ -897,6 +922,19 @@ export default function DeckSelectScreen() {
 // ---------------------------------------------------------------------------
 // Deck row — matches AnkiDroid style: name left, colored counts right
 // ---------------------------------------------------------------------------
+/** Crisp settings gear (Material "settings" outline). Replaces the Unicode
+ *  "⚙" glyph, which renders as an inconsistent dingbat/emoji across devices. */
+function GearIcon({ size = 20, color }: { size?: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        fill={color}
+        d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.48.48 0 0 0 .12.61l2.03 1.58c-.05.3-.07.62-.07.94 0 .33.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.13.22.39.3.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.25.41.48.41h3.84c.23 0 .43-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"
+      />
+    </Svg>
+  );
+}
+
 function DeckRow({
   deck,
   onPress,
@@ -912,6 +950,28 @@ function DeckRow({
   hasInstructions: boolean;
   theme: Theme;
 }) {
+  // Press feedback for the gear. NativeWind drops Pressable's
+  // `({ pressed }) => …` style-callback, so we animate a scale via the
+  // native driver on press in/out instead.
+  const gearScale = useRef(new Animated.Value(1)).current;
+  const pressGear = (to: number) =>
+    Animated.spring(gearScale, {
+      toValue: to,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 6,
+    }).start();
+
+  // Subtle press feedback for the whole deck row (select).
+  const rowScale = useRef(new Animated.Value(1)).current;
+  const pressRow = (to: number) =>
+    Animated.spring(rowScale, {
+      toValue: to,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 4,
+    }).start();
+
   // Layout contract (see SESSION-FLOW conventions; mirrored from a
   // standard mobile list-row pattern):
   //   - LEADING (left, snug): deck name + (optional) custom-instructions
@@ -940,7 +1000,10 @@ function DeckRow({
       <Pressable
         onPress={onPress}
         onLongPress={onLongPress}
-        style={({ pressed }) => ({
+        onPressIn={() => pressRow(0.97)}
+        onPressOut={() => pressRow(1)}
+        android_ripple={{ color: t.pressHighlight }}
+        style={{
           flexShrink: 1,
           minWidth: 0,
           paddingVertical: 14,
@@ -948,107 +1011,124 @@ function DeckRow({
           paddingRight: 8,
           flexDirection: "row",
           alignItems: "center",
-          backgroundColor: pressed ? t.pressHighlight : "transparent",
-        })}
+        }}
       >
-        <View
+        <Animated.View
           style={{
             flexShrink: 1,
             minWidth: 0,
             flexDirection: "row",
             alignItems: "center",
-            gap: 6,
+            transform: [{ scale: rowScale }],
           }}
         >
-          <Text
+          <View
             style={{
               flexShrink: 1,
-              fontSize: 16,
-              fontWeight: "700",
-              color: t.text,
+              minWidth: 0,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
             }}
-            numberOfLines={1}
           >
-            {deck.deckName}
-          </Text>
-          {hasInstructions && (
-            <View
+            <Text
               style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: t.accent,
-                flexShrink: 0,
+                flexShrink: 1,
+                fontSize: 16,
+                fontWeight: "700",
+                color: t.text,
               }}
-            />
-          )}
-        </View>
-        {/* Counts cluster (new / learning / review). Sits snug to the
-         * right of the deck name so the whole leading group reads as
-         * one logical block. `flexShrink: 0` — numbers never collapse;
-         * the name yields first. */}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            flexShrink: 0,
-            marginLeft: 12,
-          }}
-        >
-          <Text
+              numberOfLines={1}
+            >
+              {deck.deckName}
+            </Text>
+            {hasInstructions && (
+              <View
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: t.accent,
+                  flexShrink: 0,
+                }}
+              />
+            )}
+          </View>
+          {/* Counts cluster (new / learning / review). Sits snug to the
+           * right of the deck name so the whole leading group reads as
+           * one logical block. `flexShrink: 0` — numbers never collapse;
+           * the name yields first. */}
+          <View
             style={{
-              minWidth: 28,
-              textAlign: "right",
-              fontSize: 13,
-              fontWeight: "600",
-              color: deck.newCount > 0 ? t.info : t.textDimmed,
+              flexDirection: "row",
+              alignItems: "center",
+              flexShrink: 0,
+              marginLeft: 12,
             }}
           >
-            {deck.newCount}
-          </Text>
-          <Text
-            style={{
-              minWidth: 28,
-              textAlign: "right",
-              fontSize: 13,
-              fontWeight: "600",
-              marginLeft: 6,
-              color: deck.learnCount > 0 ? t.error : t.textDimmed,
-            }}
-          >
-            {deck.learnCount}
-          </Text>
-          <Text
-            style={{
-              minWidth: 28,
-              textAlign: "right",
-              fontSize: 13,
-              fontWeight: "600",
-              marginLeft: 6,
-              color: deck.reviewCount > 0 ? t.success : t.textDimmed,
-            }}
-          >
-            {deck.reviewCount}
-          </Text>
-        </View>
+            <Text
+              style={{
+                minWidth: 28,
+                textAlign: "right",
+                fontSize: 13,
+                fontWeight: "600",
+                color: deck.newCount > 0 ? t.info : t.textDimmed,
+              }}
+            >
+              {deck.newCount}
+            </Text>
+            <Text
+              style={{
+                minWidth: 28,
+                textAlign: "right",
+                fontSize: 13,
+                fontWeight: "600",
+                marginLeft: 6,
+                color: deck.learnCount > 0 ? t.error : t.textDimmed,
+              }}
+            >
+              {deck.learnCount}
+            </Text>
+            <Text
+              style={{
+                minWidth: 28,
+                textAlign: "right",
+                fontSize: 13,
+                fontWeight: "600",
+                marginLeft: 6,
+                color: deck.reviewCount > 0 ? t.success : t.textDimmed,
+              }}
+            >
+              {deck.reviewCount}
+            </Text>
+          </View>
+        </Animated.View>
       </Pressable>
       {/* Trailing — gear pinned at the row's right edge. `space-between`
        * on the outer wrapper pushes this sibling all the way right
        * regardless of how wide the leading group is. */}
       <Pressable
         onPress={onSettings}
+        onPressIn={() => pressGear(0.92)}
+        onPressOut={() => pressGear(1)}
         hitSlop={10}
-        style={({ pressed }) => ({
+        android_ripple={{
+          color: t.pressHighlight,
+          borderless: true,
+          radius: 22,
+        }}
+        style={{
           flexShrink: 0,
           marginRight: 4,
           paddingHorizontal: 8,
           paddingVertical: 14,
           borderRadius: 8,
-          backgroundColor: pressed ? t.pressHighlight : "transparent",
-        })}
+        }}
         accessibilityLabel={`Settings for ${deck.deckName}`}
       >
-        <Text style={{ fontSize: 18, color: t.textSecondary }}>{"⚙"}</Text>
+        <Animated.View style={{ transform: [{ scale: gearScale }] }}>
+          <GearIcon size={20} color={t.textSecondary} />
+        </Animated.View>
       </Pressable>
     </View>
   );

@@ -2,6 +2,7 @@ import "../../global.css";
 import { useEffect } from "react";
 import { Linking } from "react-native";
 import { Slot } from "expo-router";
+import Constants from "expo-constants";
 import {
   isDev,
   requiresAuth,
@@ -19,8 +20,18 @@ import { sfxPlayer } from "../services/sfxPlayer";
 const POSTHOG_API_KEY = "YOUR_POSTHOG_API_KEY";
 const POSTHOG_HOST = "https://us.i.posthog.com";
 
-// Google Sign-In web client ID from Firebase Console
-const GOOGLE_WEB_CLIENT_ID = "YOUR_GOOGLE_WEB_CLIENT_ID";
+// Google Sign-In web client ID (OAuth 2.0 "Web client", ends in
+// .apps.googleusercontent.com). Read from .env (GOOGLE_WEB_CLIENT_ID) when set
+// to a real string; otherwise use the project's Web client id directly.
+// NB: Expo serializes UNSET `extra` values to `{}` (not null/undefined), so a
+// plain `?? fallback` keeps the `{}` object and crashes native configure with
+// "webClientId cannot be cast from ReadableNativeMap to String". Guard on the
+// runtime type instead.
+const webClientIdFromExtra = Constants.expoConfig?.extra?.googleWebClientId;
+const GOOGLE_WEB_CLIENT_ID =
+  typeof webClientIdFromExtra === "string" && webClientIdFromExtra.length > 0
+    ? webClientIdFromExtra
+    : "866005886684-tvsh7olnb5gd83s7t47jfq115mrk1en2.apps.googleusercontent.com";
 
 export default function RootLayout() {
   useEffect(() => {

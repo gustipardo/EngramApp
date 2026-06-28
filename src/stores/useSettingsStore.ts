@@ -1,6 +1,6 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export interface SettingsStore {
   selectedDeck: string | null;
@@ -21,7 +21,7 @@ export interface SettingsStore {
   setDeckLanguage: (deckName: string, languageCode: string) => void;
 }
 
-export const DEFAULT_DECK_LANGUAGE = 'en-US';
+export const DEFAULT_DECK_LANGUAGE = "en-US";
 
 export const useSettingsStore = create(
   persist<SettingsStore>(
@@ -29,12 +29,13 @@ export const useSettingsStore = create(
       selectedDeck: null,
       onboardingCompleted: false,
       alwaysReadBack: false,
-      darkMode: true,
+      darkMode: false,
       deckInstructions: {},
       deckLanguages: {},
 
       setSelectedDeck: (selectedDeck) => set({ selectedDeck }),
-      setOnboardingCompleted: (onboardingCompleted) => set({ onboardingCompleted }),
+      setOnboardingCompleted: (onboardingCompleted) =>
+        set({ onboardingCompleted }),
       setAlwaysReadBack: (alwaysReadBack) => set({ alwaysReadBack }),
       toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
       setDeckInstructions: (deckName, instructions) =>
@@ -42,7 +43,10 @@ export const useSettingsStore = create(
           const trimmed = instructions.trim();
           if (trimmed) {
             return {
-              deckInstructions: { ...state.deckInstructions, [deckName]: trimmed },
+              deckInstructions: {
+                ...state.deckInstructions,
+                [deckName]: trimmed,
+              },
             };
           }
           // Empty input → drop the entry so the deck falls back to the
@@ -61,7 +65,10 @@ export const useSettingsStore = create(
           // override that matches the default.
           if (languageCode && languageCode !== DEFAULT_DECK_LANGUAGE) {
             return {
-              deckLanguages: { ...state.deckLanguages, [deckName]: languageCode },
+              deckLanguages: {
+                ...state.deckLanguages,
+                [deckName]: languageCode,
+              },
             };
           }
           const next = { ...state.deckLanguages };
@@ -70,8 +77,8 @@ export const useSettingsStore = create(
         }),
     }),
     {
-      name: 'settings-storage',
+      name: "settings-storage",
       storage: createJSONStorage(() => AsyncStorage),
-    }
-  )
+    },
+  ),
 );

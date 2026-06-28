@@ -5,6 +5,10 @@ module.exports = {
   extra: {
     geminiApiKey: process.env.GEMINI_API_KEY ?? null,
     appMode: process.env.APP_MODE ?? null,
+    // Google Sign-In: OAuth 2.0 "Web client" id from the Firebase project
+    // (Authentication → Sign-in method → Google, or GCP Credentials). Read by
+    // _layout.tsx → configureGoogleSignIn. Required for real auth to work.
+    googleWebClientId: process.env.GOOGLE_WEB_CLIENT_ID ?? null,
     // Dev-only: deck name to autostart with. The autostart only fires when
     // AUTO_START_ENABLED is also "true" OR the launch deep link carries
     // `?autostart=1`. See AUTO_START_DECK / AUTO_START_ENABLED in .env.

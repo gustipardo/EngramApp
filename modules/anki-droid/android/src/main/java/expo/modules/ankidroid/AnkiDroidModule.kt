@@ -82,8 +82,9 @@ class AnkiDroidModule : Module() {
     }
 
     // Request AnkiDroid API permission via Android's system permission dialog.
-    // Uses ActivityCompat.requestPermissions which shows the system dialog.
-    // The JS side uses AppState listener to re-check hasApiPermission after user responds.
+    // Returns true when the dialog was shown (AppState listener re-checks on return).
+    // Returns false when Android has permanently blocked the dialog ("never ask again")
+    // — the JS side should show an "Open Settings" fallback in that case.
     AsyncFunction("requestApiPermission") { promise: Promise ->
       try {
         val activity = appContext.currentActivity
@@ -92,18 +93,28 @@ class AnkiDroidModule : Module() {
           return@AsyncFunction
         }
 
-        // Check if already granted
         val alreadyGranted = ContextCompat.checkSelfPermission(context, ANKIDROID_PERMISSION) == PackageManager.PERMISSION_GRANTED
         if (alreadyGranted) {
           promise.resolve(true)
           return@AsyncFunction
         }
 
-        // Request the permission - this shows the system dialog
+        // Track whether we have ever asked. SharedPreferences lives in the app
+        // data dir and is wiped by `pm clear`, matching the permission reset.
+        val prefs = context.getSharedPreferences("engram_permissions", Context.MODE_PRIVATE)
+        val hasAskedBefore = prefs.getBoolean("asked_ankidroid_permission", false)
+        val shouldShow = ActivityCompat.shouldShowRequestPermissionRationale(activity, ANKIDROID_PERMISSION)
+
+        // shouldShowRationale == false AND we have asked before → USER_FIXED
+        // ("never ask again"). The dialog will be silently suppressed — tell JS
+        // to show the Settings fallback instead.
+        if (!shouldShow && hasAskedBefore) {
+          promise.resolve(false)
+          return@AsyncFunction
+        }
+
+        prefs.edit().putBoolean("asked_ankidroid_permission", true).apply()
         ActivityCompat.requestPermissions(activity, arrayOf(ANKIDROID_PERMISSION), PERMISSION_REQUEST_CODE)
-        // Resolve true to indicate the request was initiated.
-        // The JS side should re-check hasApiPermission() via AppState listener
-        // when the user returns to the app after responding to the dialog.
         promise.resolve(true)
       } catch (e: Exception) {
         promise.reject("REQUEST_FAILED", "Failed to request permission: ${e.message}", e)

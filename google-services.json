@@ -1,26 +1,44 @@
 {
   "project_info": {
-    "project_number": "000000000000",
-    "project_id": "ember-dev-stub",
-    "storage_bucket": "ember-dev-stub.firebasestorage.app"
+    "project_number": "866005886684",
+    "project_id": "engram-3392a",
+    "storage_bucket": "engram-3392a.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "mobilesdk_app_id": "1:866005886684:android:253aed5403aade0dd3f619",
         "android_client_info": {
           "package_name": "com.anonymous.RealtimeApiOnMobile"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "866005886684-n9mfq2tni7317hekuhndqqajuv037afh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.anonymous.RealtimeApiOnMobile",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "866005886684-tvsh7olnb5gd83s7t47jfq115mrk1en2.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyStubDoNotUse-ReplaceWithRealFirebaseKey00"
+          "current_key": "AIzaSyDEb_mYbXvYkKPYg6hA-ziFjNSGt9KP_S8"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "866005886684-tvsh7olnb5gd83s7t47jfq115mrk1en2.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
