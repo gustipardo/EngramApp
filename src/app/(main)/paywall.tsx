@@ -7,7 +7,7 @@ import {
 } from "../../services/billingService";
 import { useTrialStore } from "../../stores/useTrialStore";
 import { AnalyticsEvents } from "../../services/analytics";
-import { dark as t } from "../../theme/colors";
+import { light as t } from "../../theme/colors";
 import { requiresPayment } from "../../config/env";
 
 export default function PaywallScreen() {
@@ -121,39 +121,45 @@ export default function PaywallScreen() {
         </View>
       )}
 
-      <Pressable
-        onPress={handlePurchase}
-        disabled={purchasing}
-        style={({ pressed }) => ({
+      <View
+        style={{
           marginTop: 16,
           borderRadius: 12,
-          paddingHorizontal: 24,
-          paddingVertical: 16,
-          backgroundColor: purchasing
-            ? t.bg.surface3
-            : pressed
-              ? t.accent.pressed
-              : t.accent.default,
-        })}
+          overflow: "hidden",
+          backgroundColor: purchasing ? t.bg.surface3 : t.accent.default,
+        }}
       >
-        {purchasing ? (
-          <ActivityIndicator size="small" color={t.text.onAccent} />
-        ) : (
-          <Text
-            style={{
-              textAlign: "center",
-              fontSize: 16,
-              fontWeight: "700",
-              color: t.text.onAccent,
-            }}
-          >
-            Subscribe
-          </Text>
-        )}
-      </Pressable>
+        <Pressable
+          onPress={handlePurchase}
+          disabled={purchasing}
+          android_ripple={{ color: t.accent.pressed }}
+          style={{ paddingHorizontal: 24, paddingVertical: 16 }}
+        >
+          {purchasing ? (
+            <ActivityIndicator size="small" color={t.text.onAccent} />
+          ) : (
+            <Text
+              style={{
+                textAlign: "center",
+                fontSize: 16,
+                fontWeight: "700",
+                color: t.text.onAccent,
+              }}
+            >
+              Subscribe
+            </Text>
+          )}
+        </Pressable>
+      </View>
 
       <Pressable
-        onPress={() => router.back()}
+        onPress={() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace("/(main)/deck-select");
+          }
+        }}
         style={{ marginTop: 16, paddingVertical: 12 }}
       >
         <Text

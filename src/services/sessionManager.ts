@@ -145,6 +145,24 @@ class SessionManager {
     sfxPlayer.preload();
 
     try {
+      // ── PRE-CHECK ── Mic permission ────────────────────────────────────────
+      // Must run BEFORE connect() because geminiManager.connect() calls
+      // startCapture() internally (step 3 of its setup). On Android ≥ 34, that
+      // call needs RECORD_AUDIO already granted — asking for it here, before the
+      // WebSocket opens, ensures the capture initialises correctly the first time.
+      // Asking after connect() (the old position) left startCapture() running
+      // without permission, producing an uninitialised mic stream that the later
+      // unmute step could not recover.
+      const hasMicPermission = await this.ensureMicPermission();
+      if (!hasMicPermission) {
+        throw Object.assign(
+          new Error(
+            "Microphone access is needed to study by voice. Tap Try Again and allow it, or enable it in Settings → Apps → Engram → Permissions.",
+          ),
+          { code: "missing_mic_permission" },
+        );
+      }
+
       // ── STEP 1 ── Connect WebSocket to Gemini ─────────────────────────────
       const connectionState = useConnectionStore.getState().connectionState;
       sessionLog.step(1, { deck: selectedDeck, prev_state: connectionState });
@@ -276,23 +294,6 @@ class SessionManager {
       this.registerEventHandlers();
       this.installConnectionDropHandler();
       this.subscribeToConnectionState();
-
-      // Mic permission is requested HERE — at session start — so the user
-      // sees the standard Android popup the first time they enter a deck
-      // (the onboarding flow no longer asks upfront). RECORD_AUDIO must be
-      // granted before starting the mic foreground service: on targetSDK ≥ 34
-      // Android throws a process-killing SecurityException if it's absent, and
-      // the try/catch below cannot catch it. So request → re-check → throw a
-      // friendly JS error only if the user actually denied.
-      const hasMicPermission = await this.ensureMicPermission();
-      if (!hasMicPermission) {
-        throw Object.assign(
-          new Error(
-            "Microphone access is needed to study by voice. Tap Try Again and allow it, or enable it in Settings → Apps → Engram → Permissions.",
-          ),
-          { code: "missing_mic_permission" },
-        );
-      }
 
       // Notifications power the phone-call-style in-session banner (pause/end
       // when minimized). Best-effort: request once, never block the session on

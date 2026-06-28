@@ -3,7 +3,7 @@ import Svg, { Path } from "react-native-svg";
 import { useRouter } from "expo-router";
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { useTrialStore } from "../../stores/useTrialStore";
-import { dark as t } from "../../theme/colors";
+import { light as t } from "../../theme/colors";
 import { EngramWordmark } from "../../components/EngramWordmark";
 
 /** Shown once right after first sign-in: confirms the free trial has started
@@ -91,7 +91,7 @@ export default function TrialStartedScreen() {
       >
         {subscribed
           ? "Your subscription is active. Jump in and start studying by voice."
-          : `You have ${days} day${days === 1 ? "" : "s"} of full access. Study any deck by voice with the AI tutor — no limits during your trial.`}
+          : `You have ${days} day${days === 1 ? "" : "s"} of full access. Study any deck by voice with the AI tutor.`}
       </Text>
 
       <Pressable
