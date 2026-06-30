@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -44,6 +44,8 @@ export default function SettingsScreen() {
   const setAlwaysReadBack = useSettingsStore((s) => s.setAlwaysReadBack);
 
   const trialStatus = useTrialStore((s) => s.status);
+  const trialError = useTrialStore((s) => s.error);
+  const trialChecking = useTrialStore((s) => s.isChecking);
   const refreshTrialStatus = useTrialStore((s) => s.refresh);
   const user = useAuthStore((s) => s.user);
 
@@ -57,6 +59,15 @@ export default function SettingsScreen() {
   // Auth is enforced but nobody is signed in (e.g. browsing decks signed-out
   // and opening Account before tapping a deck). Offer a way in.
   const showSignIn = !authBypassed() && !user;
+
+  // Pull a fresh status whenever a signed-in user opens Account and we don't
+  // already have one (e.g. the post-login refresh failed). Without this the
+  // plan card can sit on "Checking your plan…" forever.
+  useEffect(() => {
+    if (!dev && !!user && !trialStatus && !trialChecking) {
+      refreshTrialStatus();
+    }
+  }, [dev, user, trialStatus, trialChecking, refreshTrialStatus]);
 
   const accountInitial = (user?.displayName || user?.email || "?")
     .trim()
@@ -289,6 +300,27 @@ export default function SettingsScreen() {
               <PrimaryButton
                 label="Sign in with Google"
                 onPress={handleSignIn}
+                t={t}
+              />
+            </>
+          ) : trialError && !trialStatus ? (
+            <>
+              <PlanLabel color={t.error}>Couldn’t load your plan</PlanLabel>
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: t.textSecondary,
+                  marginBottom: 14,
+                }}
+              >
+                We couldn’t reach the server to check your plan. Check your
+                connection and try again.
+              </Text>
+              <PrimaryButton
+                label={trialChecking ? "Retrying…" : "Retry"}
+                onPress={() => {
+                  if (!trialChecking) refreshTrialStatus();
+                }}
                 t={t}
               />
             </>
