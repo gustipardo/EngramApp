@@ -40,9 +40,13 @@ class AudioTrackManager {
     stop() // Release any previous instance
     halted = false  // fresh session — re-enable writes
 
+    // Output is STEREO even though Gemini sends mono PCM: over Bluetooth/A2DP
+    // (e.g. AirPods) a CHANNEL_OUT_MONO track gets routed to a single ear.
+    // writeChunk duplicates each mono sample into both L+R so the tutor is
+    // heard in both ears. (On the phone speaker mono was fine; BT was not.)
     val bufferSize = AudioTrack.getMinBufferSize(
       sampleRate,
-      AudioFormat.CHANNEL_OUT_MONO,
+      AudioFormat.CHANNEL_OUT_STEREO,
       AudioFormat.ENCODING_PCM_16BIT
     )
 
@@ -62,7 +66,7 @@ class AudioTrackManager {
         AudioFormat.Builder()
           .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
           .setSampleRate(sampleRate)
-          .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+          .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
           .build()
       )
       .setBufferSizeInBytes(bufferSize * 4)
@@ -76,8 +80,23 @@ class AudioTrackManager {
   fun writeChunk(base64Data: String) {
     // Drop queued chunks once End/Pause has fired — see `halted` doc above.
     if (halted) return
-    val bytes = Base64.decode(base64Data, Base64.DEFAULT)
-    audioTrack?.write(bytes, 0, bytes.size)
+    val mono = Base64.decode(base64Data, Base64.DEFAULT)
+    // Up-mix mono 16-bit PCM → interleaved stereo (L=R) so both ears get audio
+    // over Bluetooth. Each 2-byte sample is written twice (L then R).
+    val stereo = ByteArray(mono.size * 2)
+    var di = 0
+    var si = 0
+    while (si + 1 < mono.size) {
+      val lo = mono[si]
+      val hi = mono[si + 1]
+      stereo[di] = lo       // L low
+      stereo[di + 1] = hi   // L high
+      stereo[di + 2] = lo   // R low
+      stereo[di + 3] = hi   // R high
+      di += 4
+      si += 2
+    }
+    audioTrack?.write(stereo, 0, di)
   }
 
   /**
