@@ -77,7 +77,10 @@ export async function purchaseSubscription(
   if (!requiresPayment()) return;
 
   const productId = SKU_MAP[sku];
-  const products = await fetchProducts({ skus: [productId] });
+  // Must query with type: "subs" — Play returns nothing for a subscription
+  // product id under the default "in-app" query, which previously made every
+  // purchase throw "Subscription product not found".
+  const products = await fetchProducts({ skus: [productId], type: "subs" });
 
   if (!products || products.length === 0) {
     throw new Error("Subscription product not found");

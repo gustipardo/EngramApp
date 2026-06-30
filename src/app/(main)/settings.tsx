@@ -221,7 +221,12 @@ export default function SettingsScreen() {
               style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
             >
               <Text
-                style={{ fontSize: 16, fontWeight: "700", color: t.text }}
+                style={{
+                  flexShrink: 1,
+                  fontSize: 16,
+                  fontWeight: "700",
+                  color: t.text,
+                }}
                 numberOfLines={1}
               >
                 {user?.displayName ??
@@ -230,6 +235,7 @@ export default function SettingsScreen() {
               {isDevBuild && (
                 <View
                   style={{
+                    flexShrink: 0,
                     paddingHorizontal: 8,
                     paddingVertical: 2,
                     borderRadius: 999,
@@ -319,6 +325,7 @@ export default function SettingsScreen() {
           }}
         >
           <ToggleRow
+            testID="toggle-dark"
             title="Dark mode"
             subtitle="Use the dark theme across the app"
             value={darkMode}
@@ -330,6 +337,7 @@ export default function SettingsScreen() {
           />
           <Divider t={t} />
           <ToggleRow
+            testID="toggle-readback"
             title="Always read answer"
             subtitle="Read the back of the card after every answer"
             value={alwaysReadBack}
@@ -685,12 +693,14 @@ function ToggleRow({
   subtitle,
   value,
   onValueChange,
+  testID,
   t,
 }: {
   title: string;
   subtitle: string;
   value: boolean;
   onValueChange: (v: boolean) => void;
+  testID?: string;
   t: Theme;
 }) {
   return (
@@ -712,6 +722,7 @@ function ToggleRow({
         </Text>
       </View>
       <Switch
+        testID={testID}
         value={value}
         onValueChange={onValueChange}
         trackColor={{ false: t.switchTrackOff, true: t.switchTrackOn }}
