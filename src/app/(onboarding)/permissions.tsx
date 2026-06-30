@@ -106,7 +106,7 @@ export default function PermissionsScreen() {
             marginBottom: 16,
             borderRadius: 12,
             borderWidth: 1,
-            borderColor: t.error.border ?? t.border.subtle,
+            borderColor: t.error.default,
             backgroundColor: t.error.subtleBg,
             padding: 16,
           }}

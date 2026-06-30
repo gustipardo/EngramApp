@@ -6,6 +6,12 @@ export interface TrialStatus {
   daysRemaining: number;
   sessionsRemaining: number;
   subscriptionActive: boolean;
+  /**
+   * Which plan an active subscriber is on, derived server-side from the
+   * stored Play product id. `null`/absent when not subscribed. Optional so the
+   * dev "unlocked" shape and older server responses stay valid.
+   */
+  plan?: "monthly" | "yearly" | null;
 }
 
 /**
@@ -66,7 +72,10 @@ export async function recordSession(): Promise<TrialStatus> {
     const result = await callable();
     return result.data as TrialStatus;
   } catch (err) {
-    console.warn("[trial] recordSession failed — quota not consumed this turn", err);
+    console.warn(
+      "[trial] recordSession failed — quota not consumed this turn",
+      err,
+    );
     // Best-effort: still report the status we can compute locally so the
     // UI doesn't crash. Return the unlocked shape so the session is never
     // blocked on a quota write; the server will catch up on the next call.

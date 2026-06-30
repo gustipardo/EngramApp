@@ -89,7 +89,9 @@ describe("trialService — production mode (requiresPayment === true)", () => {
   it("recordSession swallows network errors and returns the unlocked shape", async () => {
     // Best-effort on the client: a transient blip must NOT block the
     // session. The function will catch up on the next checkTrialStatus.
-    mockCallable.mockRejectedValueOnce(new Error("functions/network-unavailable"));
+    mockCallable.mockRejectedValueOnce(
+      new Error("functions/network-unavailable"),
+    );
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
 
     const status = await recordSession();
@@ -98,6 +100,21 @@ describe("trialService — production mode (requiresPayment === true)", () => {
     expect(status.subscriptionActive).toBe(true);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it("checkTrialStatus passes the server `plan` field through untouched", async () => {
+    mockCallable.mockResolvedValueOnce({
+      data: {
+        isActive: true,
+        daysRemaining: 0,
+        sessionsRemaining: 0,
+        subscriptionActive: true,
+        plan: "yearly",
+      },
+    });
+
+    const status = await checkTrialStatus();
+    expect(status.plan).toBe("yearly");
   });
 });
 

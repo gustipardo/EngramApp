@@ -7,6 +7,20 @@ const db = admin.firestore();
 const TRIAL_DAYS = 7;
 const TRIAL_MAX_SESSIONS = 10;
 
+// Play product id → plan label. Mirrors SKU_MAP in src/services/billingService.ts.
+// Duplicated here on purpose: functions is a standalone package and must not
+// import from the app source tree.
+const PRODUCT_PLAN: Record<string, "monthly" | "yearly"> = {
+  "com.ankiconversacionales.app.monthly": "monthly",
+  "com.ankiconversacionales.app.yearly": "yearly",
+};
+
+function planFromProductId(
+  productId: string | undefined,
+): "monthly" | "yearly" | null {
+  return (productId && PRODUCT_PLAN[productId]) || null;
+}
+
 interface UserData {
   createdAt?: FirebaseFirestore.Timestamp;
   trialStart?: FirebaseFirestore.Timestamp;
@@ -22,6 +36,9 @@ export interface TrialStatus {
   daysRemaining: number;
   sessionsRemaining: number;
   subscriptionActive: boolean;
+  // Which plan an active subscriber is on (from subscriptionProductId); null
+  // when not subscribed. Lets the client label "Engram Pro · Yearly".
+  plan: "monthly" | "yearly" | null;
 }
 
 /**
@@ -34,13 +51,16 @@ export interface TrialStatus {
  *  - subscription active — always returns active=true, counters 0
  *  - trialStart missing — falls back to now (shouldn't happen post-create-on-read)
  */
-export function computeTrialStatus(userData: UserData | undefined): TrialStatus {
+export function computeTrialStatus(
+  userData: UserData | undefined,
+): TrialStatus {
   if (userData?.subscriptionStatus === "active") {
     return {
       isActive: true,
       daysRemaining: 0,
       sessionsRemaining: 0,
       subscriptionActive: true,
+      plan: planFromProductId(userData.subscriptionProductId),
     };
   }
 
@@ -59,6 +79,7 @@ export function computeTrialStatus(userData: UserData | undefined): TrialStatus 
     daysRemaining,
     sessionsRemaining,
     subscriptionActive: false,
+    plan: null,
   };
 }
 
@@ -189,7 +210,10 @@ export const verifyPurchase = onCall(async (request) => {
   };
 
   if (!purchaseToken || !productId) {
-    throw new HttpsError("invalid-argument", "Missing purchaseToken or productId");
+    throw new HttpsError(
+      "invalid-argument",
+      "Missing purchaseToken or productId",
+    );
   }
 
   const uid = request.auth.uid;

@@ -27,10 +27,9 @@ import { ankiBridge } from "../../native/ankiBridge";
 import { requiresPayment, requiresAuth } from "../../config/env";
 import { useTrialStore } from "../../stores/useTrialStore";
 import { useAuthStore } from "../../stores/useAuthStore";
-import { signOut } from "../../services/authService";
 import { AnalyticsEvents } from "../../services/analytics";
 import type { DeckInfo } from "../../types/anki";
-import { palette } from "../../theme/colors";
+import { type Theme, darkTheme, lightTheme } from "../../theme/appTheme";
 import { EngramWordmark } from "../../components/EngramWordmark";
 import { useAutostartEnabled } from "../../services/autostartFlag";
 
@@ -55,81 +54,6 @@ const LANGUAGE_OPTIONS: { code: string; label: string }[] = [
   { code: "zh-CN", label: "Mandarin" },
 ];
 
-// ---------------------------------------------------------------------------
-// Theme — Engram tokens (see src/theme/colors.ts)
-// ---------------------------------------------------------------------------
-interface Theme {
-  bg: string;
-  surface: string;
-  text: string;
-  textSecondary: string;
-  textDimmed: string;
-  textOnAccent: string;
-  border: string;
-  accent: string;
-  success: string;
-  error: string;
-  info: string;
-  pressHighlight: string;
-  switchTrackOff: string;
-  switchTrackOn: string;
-  switchThumbOff: string;
-  switchThumbOn: string;
-  errorCircleBg: string;
-  warnCircleBg: string;
-  trialBannerBg: string;
-  trialBannerText: string;
-  statusBar: "light-content" | "dark-content";
-}
-
-const darkTheme: Theme = {
-  bg: palette.navy[900],
-  surface: palette.navy[850],
-  text: palette.navy[50],
-  textSecondary: palette.navy[200],
-  textDimmed: palette.navy[400],
-  textOnAccent: palette.navy[900],
-  border: palette.navy[700],
-  accent: palette.amber[500],
-  success: palette.sage[500],
-  error: palette.terracota[500],
-  info: palette.slate[500],
-  pressHighlight: palette.navy[700],
-  switchTrackOff: palette.navy[400],
-  switchTrackOn: palette.amber[700],
-  switchThumbOff: palette.navy[200],
-  switchThumbOn: palette.amber[300],
-  errorCircleBg: "rgba(198, 123, 92, 0.18)",
-  warnCircleBg: "rgba(228, 161, 63, 0.18)",
-  trialBannerBg: "rgba(228, 161, 63, 0.12)",
-  trialBannerText: palette.amber[300],
-  statusBar: "light-content",
-};
-
-const lightTheme: Theme = {
-  bg: palette.paper[100],
-  surface: palette.paper[50],
-  text: palette.navy[850],
-  textSecondary: palette.navy[600],
-  textDimmed: palette.navy[300],
-  textOnAccent: palette.paper[100],
-  border: palette.paper[500],
-  accent: palette.amber[700],
-  success: palette.sage[700],
-  error: palette.terracota[700],
-  info: palette.slate[700],
-  pressHighlight: palette.paper[300],
-  switchTrackOff: palette.paper[500],
-  switchTrackOn: palette.amber[300],
-  switchThumbOff: palette.paper[50],
-  switchThumbOn: palette.amber[700],
-  errorCircleBg: "rgba(165, 90, 61, 0.14)",
-  warnCircleBg: "rgba(184, 120, 38, 0.14)",
-  trialBannerBg: "rgba(184, 120, 38, 0.10)",
-  trialBannerText: palette.amber[800],
-  statusBar: "dark-content",
-};
-
 type LoadingState = "loading" | "loaded" | "error" | "empty";
 
 export default function DeckSelectScreen() {
@@ -138,7 +62,6 @@ export default function DeckSelectScreen() {
   const alwaysReadBack = useSettingsStore((s) => s.alwaysReadBack);
   const setAlwaysReadBack = useSettingsStore((s) => s.setAlwaysReadBack);
   const darkMode = useSettingsStore((s) => s.darkMode);
-  const toggleDarkMode = useSettingsStore((s) => s.toggleDarkMode);
   const deckInstructions = useSettingsStore((s) => s.deckInstructions);
   const setDeckInstructions = useSettingsStore((s) => s.setDeckInstructions);
   const deckLanguages = useSettingsStore((s) => s.deckLanguages);
@@ -156,6 +79,11 @@ export default function DeckSelectScreen() {
   const trialStatus = useTrialStore((s) => s.status);
   const refreshTrialStatus = useTrialStore((s) => s.refresh);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
+  const accountInitial = (user?.displayName || user?.email || "?")
+    .trim()
+    .charAt(0)
+    .toUpperCase();
   // Unified deck-settings sheet (language + tutor instructions). Replaces
   // the standalone instructions modal — same surface, more obvious entry
   // point via the gear icon on each row.
@@ -244,19 +172,6 @@ export default function DeckSelectScreen() {
     setRefreshing(true);
     await loadDecks();
     setRefreshing(false);
-  }
-
-  async function handleSignOut() {
-    try {
-      await signOut();
-      // Clear stale trial status — it belongs to the signed-out user
-      useTrialStore.setState({ status: null });
-      // Go directly to sign-in. Don't touch onboardingCompleted — AnkiDroid
-      // setup is still done; the user just needs to log back in.
-      router.replace("/(onboarding)/sign-in");
-    } catch (err) {
-      console.error("Sign-out failed:", err);
-    }
   }
 
   async function handleSync() {
@@ -537,55 +452,45 @@ export default function DeckSelectScreen() {
                 <Text style={{ color: t.textSecondary, fontSize: 18 }}>⟳</Text>
               )}
             </Pressable>
+            {/* Account + settings. Replaces the old Dark / Sign Out buttons —
+             * theme toggle, billing and sign-out all live in the settings
+             * screen now. Shown in every mode (the screen handles signed-out /
+             * dev states). */}
             <Pressable
-              onPress={toggleDarkMode}
+              onPress={() => router.push("/(main)/settings")}
+              android_ripple={{
+                color: t.pressHighlight,
+                borderless: true,
+                radius: 24,
+              }}
+              hitSlop={8}
+              accessibilityLabel="Account and settings"
               style={{
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: 8,
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                alignItems: "center",
+                justifyContent: "center",
                 backgroundColor: t.pressHighlight,
+                borderWidth: 1,
+                borderColor: t.border,
               }}
             >
-              <Text
-                style={{
-                  color: t.textSecondary,
-                  fontSize: 13,
-                  fontWeight: "600",
-                }}
-              >
-                {darkMode ? "Light" : "Dark"}
+              <Text style={{ color: t.text, fontSize: 15, fontWeight: "700" }}>
+                {accountInitial}
               </Text>
             </Pressable>
-            {requiresAuth() && isAuthenticated && (
-              <Pressable
-                onPress={handleSignOut}
-                style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  borderRadius: 8,
-                  backgroundColor: t.pressHighlight,
-                }}
-              >
-                <Text
-                  style={{
-                    color: t.textSecondary,
-                    fontSize: 13,
-                    fontWeight: "600",
-                  }}
-                >
-                  Sign Out
-                </Text>
-              </Pressable>
-            )}
           </View>
         </View>
       </View>
 
-      {/* Trial status banner */}
+      {/* Trial status banner — taps through to the account/plan screen. */}
       {trialStatus &&
         trialStatus.isActive &&
         !trialStatus.subscriptionActive && (
-          <View
+          <Pressable
+            onPress={() => router.push("/(main)/settings")}
+            android_ripple={{ color: t.pressHighlight }}
             style={{
               marginHorizontal: 16,
               marginTop: 12,
@@ -593,10 +498,15 @@ export default function DeckSelectScreen() {
               borderRadius: 12,
               paddingHorizontal: 16,
               paddingVertical: 10,
+              overflow: "hidden",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
             }}
           >
             <Text
               style={{
+                flexShrink: 1,
                 fontSize: 13,
                 fontWeight: "600",
                 color: t.trialBannerText,
@@ -605,7 +515,17 @@ export default function DeckSelectScreen() {
               Free trial: {trialStatus.daysRemaining} days /{" "}
               {trialStatus.sessionsRemaining} sessions remaining
             </Text>
-          </View>
+            <Text
+              style={{
+                marginLeft: 12,
+                fontSize: 13,
+                fontWeight: "700",
+                color: t.trialBannerText,
+              }}
+            >
+              Manage ›
+            </Text>
+          </Pressable>
         )}
 
       {/* Settings row */}

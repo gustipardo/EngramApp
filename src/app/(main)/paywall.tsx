@@ -1,19 +1,31 @@
 import { useState, useEffect } from "react";
-import { View, Text, Pressable, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  ActivityIndicator,
+  Linking,
+} from "react-native";
 import { useRouter } from "expo-router";
 import {
   purchaseSubscription,
-  SubscriptionSku,
+  getSubscriptionPrices,
+  restorePurchases,
+  type SubscriptionSku,
+  type SubscriptionPrices,
 } from "../../services/billingService";
 import { useTrialStore } from "../../stores/useTrialStore";
 import { AnalyticsEvents } from "../../services/analytics";
 import { light as t } from "../../theme/colors";
 import { requiresPayment } from "../../config/env";
+import { TERMS_URL, PRIVACY_URL } from "../../config/links";
 
 export default function PaywallScreen() {
   const router = useRouter();
   const refreshTrialStatus = useTrialStore((s) => s.refresh);
   const [purchasing, setPurchasing] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [prices, setPrices] = useState<SubscriptionPrices>({});
 
   // In dev mode, paywall should never show. Expo Router restores it from
   // cached nav state when deep links fire (Dev Client quirk). Pop back to
@@ -28,6 +40,15 @@ export default function PaywallScreen() {
       }
     }
   }, []);
+
+  // Show real, localized Play prices instead of hardcoded copy. Best-effort —
+  // falls back to the default strings if the fetch fails or we're in dev bypass.
+  useEffect(() => {
+    getSubscriptionPrices()
+      .then(setPrices)
+      .catch(() => {});
+  }, []);
+
   const [error, setError] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<"monthly" | "yearly">(
     "yearly",
@@ -54,6 +75,33 @@ export default function PaywallScreen() {
       setPurchasing(false);
     }
   }
+
+  async function handleRestore() {
+    if (restoring) return;
+    setRestoring(true);
+    setError(null);
+    try {
+      const restored = await restorePurchases();
+      await refreshTrialStatus();
+      if (restored) {
+        router.replace("/(main)/deck-select");
+      } else {
+        setError("No active subscription found to restore.");
+      }
+    } catch (err) {
+      console.error("Restore failed:", err);
+      setError("Restore failed. Please try again.");
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  const monthlyPrice = prices.monthly
+    ? `${prices.monthly}/month`
+    : "$4.99/month";
+  const yearlyPrice = prices.yearly
+    ? `${prices.yearly}/year`
+    : "$39.99/year ($3.33/mo)";
 
   return (
     <View
@@ -91,14 +139,14 @@ export default function PaywallScreen() {
 
       <PlanOption
         label="Yearly"
-        price="$39.99/year ($3.33/mo)"
+        price={yearlyPrice}
         badge="Save 33%"
         selected={selectedPlan === "yearly"}
         onPress={() => setSelectedPlan("yearly")}
       />
       <PlanOption
         label="Monthly"
-        price="$4.99/month"
+        price={monthlyPrice}
         selected={selectedPlan === "monthly"}
         onPress={() => setSelectedPlan("monthly")}
       />
@@ -153,6 +201,26 @@ export default function PaywallScreen() {
       </View>
 
       <Pressable
+        onPress={handleRestore}
+        disabled={restoring}
+        style={{ marginTop: 14, paddingVertical: 10 }}
+      >
+        {restoring ? (
+          <ActivityIndicator size="small" color={t.text.secondary} />
+        ) : (
+          <Text
+            style={{
+              textAlign: "center",
+              fontSize: 13,
+              color: t.text.secondary,
+            }}
+          >
+            Restore purchases
+          </Text>
+        )}
+      </Pressable>
+
+      <Pressable
         onPress={() => {
           if (router.canGoBack()) {
             router.back();
@@ -160,7 +228,7 @@ export default function PaywallScreen() {
             router.replace("/(main)/deck-select");
           }
         }}
-        style={{ marginTop: 16, paddingVertical: 12 }}
+        style={{ paddingVertical: 12 }}
       >
         <Text
           style={{ textAlign: "center", fontSize: 13, color: t.text.tertiary }}
@@ -168,6 +236,28 @@ export default function PaywallScreen() {
           Maybe later
         </Text>
       </Pressable>
+
+      {/* Play policy: Terms + Privacy must be reachable from the purchase screen. */}
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "center",
+          alignItems: "center",
+          marginTop: 8,
+        }}
+      >
+        <Pressable onPress={() => Linking.openURL(TERMS_URL)} hitSlop={8}>
+          <Text style={{ fontSize: 12, color: t.text.tertiary }}>
+            Terms of Use
+          </Text>
+        </Pressable>
+        <Text style={{ fontSize: 12, color: t.text.tertiary }}> · </Text>
+        <Pressable onPress={() => Linking.openURL(PRIVACY_URL)} hitSlop={8}>
+          <Text style={{ fontSize: 12, color: t.text.tertiary }}>
+            Privacy Policy
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
