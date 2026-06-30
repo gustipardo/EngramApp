@@ -453,7 +453,7 @@ export default function DeckSelectScreen() {
               {syncing ? (
                 <ActivityIndicator size="small" color={t.textSecondary} />
               ) : (
-                <RefreshIcon size={17} color={t.textSecondary} />
+                <RefreshIcon size={15} color={t.textSecondary} />
               )}
               <Text
                 style={{
