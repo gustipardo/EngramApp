@@ -1,11 +1,23 @@
 import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
+import { GoogleGenAI, Modality } from "@google/genai";
 
 admin.initializeApp();
 const db = admin.firestore();
 
 const TRIAL_DAYS = 7;
 const TRIAL_MAX_SESSIONS = 10;
+
+// Gemini API key lives only on the server now (Cloud Secret Manager). The app
+// no longer ships it — it fetches a short-lived ephemeral token from
+// mintLiveToken instead. Set with: firebase functions:secrets:set GEMINI_API_KEY
+const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
+
+// Must match the model the app opens the Live session with
+// (geminiManager.ts GEMINI_MODEL). The ephemeral token is locked to it so an
+// extracted token can't be repurposed against another model.
+const GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 
 // Play product id → plan label. Mirrors SKU_MAP in src/services/billingService.ts.
 // Duplicated here on purpose: functions is a standalone package and must not
@@ -229,3 +241,60 @@ export const verifyPurchase = onCall(async (request) => {
 
   return { status: "success" };
 });
+
+// ─── mintLiveToken ──────────────────────────────────────────────────
+// Token broker (pre-launch blocker #1). Mints a short-lived, single-use
+// Gemini ephemeral token so the raw API key never ships in the APK. The
+// client opens the Live WebSocket with this token in the `?access_token=`
+// query param (v1alpha) instead of `?key=<apiKey>`.
+//
+// Server-side gate (defense in depth): only signed-in users with an active
+// trial or subscription get a token. This makes the broker a second quota
+// wall — even a tampered client can't obtain a token once the trial is spent.
+//
+// The token is locked to our model (liveConnectConstraints) and to a single
+// use, expiring ~30 min out with a ~2 min window to start the session.
+export const mintLiveToken = onCall(
+  { secrets: [GEMINI_API_KEY] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Must be signed in");
+    }
+
+    const uid = request.auth.uid;
+    const snap = await db.collection("users").doc(uid).get();
+    const status = computeTrialStatus(
+      snap.exists ? (snap.data() as UserData) : undefined,
+    );
+
+    // Gate: active subscription OR live trial. Mirror the client's paywall
+    // logic so the token can't be minted for an expired free user.
+    if (!status.subscriptionActive && !status.isActive) {
+      throw new HttpsError("failed-precondition", "trial_expired");
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey: GEMINI_API_KEY.value(),
+      httpOptions: { apiVersion: "v1alpha" },
+    });
+
+    const now = Date.now();
+    const token = await ai.authTokens.create({
+      config: {
+        uses: 1,
+        expireTime: new Date(now + 30 * 60 * 1000).toISOString(),
+        newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(),
+        liveConnectConstraints: {
+          model: GEMINI_MODEL,
+          config: { responseModalities: [Modality.AUDIO] },
+        },
+      },
+    });
+
+    if (!token.name) {
+      throw new HttpsError("internal", "Token mint returned no name");
+    }
+
+    return { token: token.name };
+  },
+);

@@ -80,18 +80,19 @@ client ──toolResponse───────▶          functionResponses[{id
 ```
 
 **Server → client messages (the ones Engram maps):**
-| Gemini message | Meaning | Engram maps it to |
-|---|---|---|
-| `setupComplete` | session configured | internal `session.updated` |
-| `serverContent.inputTranscription.text` | user speech transcript | drives `evaluating` transition |
-| `serverContent.outputTranscription.text` | tutor speech transcript | UI-advance matcher |
-| `serverContent.modelTurn.parts[].inlineData` | output audio chunk (24 kHz) | played via native AudioTrack |
-| `serverContent.turnComplete` | model finished its turn | internal `response.done` |
-| `toolCall.functionCalls[]` | model invokes a tool | `evaluate_and_move_next` etc. |
-| `interrupted` | user barged in (VAD) | (available, stop playback) |
-| `generationComplete` | generation done (vs paused) | (available) |
-| `goAway` | connection closing soon (`timeLeft`) | (not handled — see §9) |
-| `error` | server error | logged + surfaced |
+
+| Gemini message                               | Meaning                              | Engram maps it to              |
+| -------------------------------------------- | ------------------------------------ | ------------------------------ |
+| `setupComplete`                              | session configured                   | internal `session.updated`     |
+| `serverContent.inputTranscription.text`      | user speech transcript               | drives `evaluating` transition |
+| `serverContent.outputTranscription.text`     | tutor speech transcript              | UI-advance matcher             |
+| `serverContent.modelTurn.parts[].inlineData` | output audio chunk (24 kHz)          | played via native AudioTrack   |
+| `serverContent.turnComplete`                 | model finished its turn              | internal `response.done`       |
+| `toolCall.functionCalls[]`                   | model invokes a tool                 | `evaluate_and_move_next` etc.  |
+| `interrupted`                                | user barged in (VAD)                 | (available, stop playback)     |
+| `generationComplete`                         | generation done (vs paused)          | (available)                    |
+| `goAway`                                     | connection closing soon (`timeLeft`) | (not handled — see §9)         |
+| `error`                                      | server error                         | logged + surfaced              |
 
 > **Note on the codebase:** `geminiManager` translates these Gemini messages into **OpenAI-Realtime-style event names** (`response.audio.delta`, `input_audio_buffer.speech_started`, `conversation.item.input_audio_transcription.completed`, …) because `sessionManager` was first written against that event vocabulary. That internal naming is a compatibility shim, not a second provider.
 
@@ -189,7 +190,8 @@ This is where Engram has headroom. Defaults and the relevant features:
 
 ## 11. Authentication & the key problem
 
-- **Today:** the API key is read from `Constants.expoConfig.extra.geminiApiKey` and placed in the WS URL query string. It ships inside the APK → anyone can extract it. (This is pre-launch blocker P0 #1/#2 in `ROADMAP.md`.)
+- **Shipped 2026-07-01 (token broker).** The app no longer ships the raw key in production. `mintLiveToken` (Cloud Function) mints a short-lived, single-use ephemeral token gated on an active trial/subscription; the client fetches it via `tokenService.getLiveCredential()` and opens the Live WS with `?access_token=<token.name>` on the **v1alpha** endpoint. Dev bypass (payment gate off) still uses the raw key on v1beta `?key=`. Production config drops the key (`app.config.js` nulls `geminiApiKey` when `APP_MODE=production`). **Deploy steps:** `firebase functions:secrets:set GEMINI_API_KEY` then `firebase deploy --only functions`.
+- **History:** the API key used to be read from `Constants.expoConfig.extra.geminiApiKey` and placed in the WS URL query string. It shipped inside the APK → anyone could extract it. (Was pre-launch blocker P0 #1/#2 in `ROADMAP.md`.)
 - **Two fixes:**
   1. **GCP key restriction** (simplest): restrict the key to Android apps + package + release SHA-1 + Generative Language API only. Makes an extracted key useless off your signed app.
   2. **Ephemeral tokens** (proper, client-safe): a backend mints a short-lived token; the client opens the Live session with it instead of the real key.
