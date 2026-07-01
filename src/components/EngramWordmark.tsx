@@ -20,7 +20,7 @@ type Props = {
 };
 
 /**
- * Engram lockup: amber mark + "engram" wordmark.
+ * Engram lockup: amber mark + "Engram" wordmark.
  *
  * Mark geometry is the same as `_design/04-cip/logo/engram-mark-{light,dark}.svg`,
  * rescaled into a 120×120 viewBox (source SVG is 200×200; scale factor 0.6).
@@ -65,7 +65,7 @@ export function EngramWordmark({ width = 200, color, punchColor, style, markOnly
             fontFamily: 'serif',
           }}
         >
-          engram
+          Engram
         </Text>
       )}
     </View>
