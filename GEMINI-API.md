@@ -21,9 +21,9 @@
 | Turn-taking | server VAD, tuned HIGH sensitivity                                                | `realtimeInputConfig`      |
 | Tools       | 4 function declarations (`evaluate_and_move_next`, skip, override, `end_session`) | `src/config/prompts.ts`    |
 | Language    | steered by the **prompt** ("Language: X ONLY"), not `languageCode`                | §10, BUG 16                |
-| Resumption  | **not implemented** — disconnect = dead session                                   | §9, BUG 15                 |
+| Resumption  | wired — handle cached + replayed on reconnect (shipped 2026-06-24)                | §9, §16, BUG 15            |
 
-Session resumption + context-window compression are now wired (shipped 2026-06-24, see §16). The remaining high-value gap is **ephemeral tokens** (§11 → P0 token broker), which keeps the API key out of the APK and is its own task.
+Session resumption + context-window compression are wired (shipped 2026-06-24, see §16). Ephemeral tokens are also wired (shipped 2026-07-01, see §11): `mintLiveToken` mints a single-use token server-side, so the raw API key no longer ships in a production APK.
 
 ---
 

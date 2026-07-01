@@ -38,9 +38,9 @@ default "commit only when the user asks" behavior.
 
 Android-only Expo (SDK 54) + React Native app. Voice-powered study tutor that reads AnkiDroid flashcards aloud, listens to spoken answers, evaluates them, and advances through the deck.
 
-**Single AI backend: Gemini Live** via WebSocket (`gemini-2.5-flash-native-audio-preview-12-2025`, native audio). `realtimeManager` is a direct re-export of `geminiManager`. API key comes from `GEMINI_API_KEY` env var via `app.config.js`.
+**Single AI backend: Gemini Live** via WebSocket (`gemini-2.5-flash-native-audio-preview-12-2025`, native audio). `realtimeManager` is a direct re-export of `geminiManager`. Auth: in production the client fetches a single-use ephemeral token from the `mintLiveToken` Cloud Function (`src/services/tokenService.ts`, token broker — the raw key never ships in a release APK); in dev with the payment gate bypassed it falls back to `GEMINI_API_KEY` from `.env` via `app.config.js`. Release builds go through `scripts/build-release.sh` (enforces `APP_MODE=production`).
 
-App slug (`RealtimeApiOnMobile`) is a legacy name from when the app was OpenAI-only — rename to "Anki Conversacionales" is P1 in TODOLIST.md.
+App slug (`RealtimeApiOnMobile`) is a legacy name from when the app was OpenAI-only — rename to "Engram" (`com.engram.app`) is P1 in TODOLIST.md.
 
 ## Common Commands
 
@@ -63,8 +63,9 @@ npx jest --testPathPattern="useSessionStore"
 ### Routing (Expo Router, file-based — `src/app/`)
 
 - `index.tsx` — Root redirect based on onboarding state
-- `(onboarding)/` — First-run flow: `index.tsx` (intro), `sign-in.tsx` (Firebase Google Sign-In), `permissions.tsx` (AnkiDroid API permission), `api-key.tsx` (dev fallback for API key entry)
-- `(main)/` — Main app: `deck-select.tsx` (deck list + settings), `session.tsx` (study UI), `paywall.tsx` (trial expiry + Play Billing)
+- `(onboarding)/` — First-run flow: `index.tsx` (AnkiDroid detection), `permissions.tsx` (AnkiDroid API permission), `sign-in.tsx` (Firebase Google Sign-In, requested at first deck entry), `trial-started.tsx` (post-sign-in trial confirmation)
+- `(main)/` — Main app: `deck-select.tsx` (deck list + per-deck settings sheet), `session.tsx` (study UI), `settings.tsx` (account & billing), `paywall.tsx` (trial expiry + Play Billing)
+- `simulate.tsx` — dev deep-link target (`engram://simulate?answer=...`) that injects a fake spoken answer
 
 ### Service Layer (`src/services/`)
 
@@ -83,10 +84,13 @@ npx jest --testPathPattern="useSessionStore"
 
 ### State Management (Zustand stores in `src/stores/`)
 
-- **`useSessionStore`** — Session phase state machine: `idle → connecting → loading_cards → ready → studying → paused → completed/error`. Card index, stats, reconnect tracking.
+- **`useSessionStore`** — Session phase state machine (`SessionPhase` in `src/types/session.ts`): `idle | loading_cards | connecting | ready | asking_question | awaiting_answer | evaluating | giving_feedback | session_complete | paused | reconnecting | error`. Stats, `totalDueAtStart` snapshot. `transitionTo` does NOT validate transitions — callers guard.
 - **`useConnectionStore`** — Connection state (`idle|connecting|connected|reconnecting|failed|dropped`), reconnect attempt counter.
-- **`useSettingsStore`** — Persisted via AsyncStorage: `selectedDeck`, `onboardingCompleted`, `alwaysReadBack`, `darkMode`, per-deck `deckInstructions`.
-- **`useCardCacheStore`** — In-memory: current card index, cached cards array, `getCurrentCard()` / `getNextCard()` / `getRemainingCardCount()` accessors.
+- **`useSettingsStore`** — Persisted via AsyncStorage: `selectedDeck`, `onboardingCompleted`, `darkMode`, per-deck `deckReadBack` / `deckInstructions` / `deckLanguages`.
+- **`useCardCacheStore`** — In-memory: cached cards array, data pointer `currentIndex` (advances eagerly) + UI pointer `uiVisibleIndex` (lags during the feedback turn, BUG 12).
+- **`useTrialStore`** — Server trial/subscription status + `refresh()` + error flag.
+- **`useAuthStore`** — Firebase auth state (`onAuthStateChanged`); dev bypass resolves synchronously.
+- **`useAudioLevelStore`** — RMS mic level for the in-session VU meter.
 
 ### Types (`src/types/`)
 
@@ -96,7 +100,7 @@ npx jest --testPathPattern="useSessionStore"
 
 ### Utils (`src/utils/`)
 
-- `textUtils.ts` — string normalization helpers.
+- `planState.ts` — derives the single user-facing plan state (`dev_unlocked | subscribed | trial_active | trial_expired | unknown`) for settings/paywall/deck-select.
 
 ### Config (`src/config/`)
 
@@ -109,7 +113,6 @@ npx jest --testPathPattern="useSessionStore"
 
 ### Components (`src/components/`)
 
-- `CardDisplay.tsx` — Renders the current card (front/back depending on reveal state) during a session.
 - `EngramWordmark.tsx` — Brand wordmark used on onboarding / deck-select headers.
 
 ### Native Modules (`modules/`)
@@ -123,8 +126,10 @@ Two local Expo modules (Android/Kotlin), linked as `file:` dependencies in `pack
 
 Firebase Cloud Functions (TypeScript, Firebase Admin SDK):
 
-- **`checkTrialStatus`** — Returns trial remaining days/sessions + subscription status.
-- **`verifyPurchase`** — Called post-purchase; Google Play Developer API verification is currently **stubbed** (see TODO in `functions/src/index.ts`).
+- **`checkTrialStatus`** — Trial remaining days/sessions + subscription status. Create-on-read: first call creates `users/{uid}` and starts the trial clock.
+- **`recordSession`** — Atomic `sessionCount += 1` at session start; no-op for subscribers.
+- **`verifyPurchase`** — Called post-purchase; productId allow-listed, but Google Play Developer API token verification is still **stubbed** (see TODO in `functions/src/index.ts`).
+- **`mintLiveToken`** — Token broker: single-use Gemini Live ephemeral token, gated on active trial/subscription.
 
 ### Key Data Flow
 
@@ -141,10 +146,7 @@ Firebase Cloud Functions (TypeScript, Firebase Admin SDK):
 
 ## Other top-level files worth knowing
 
-- `_bmad/`, `_bmad-output/` — BMAD-Method agent builder artifacts (stories, epics, implementation planning). Not runtime code; useful for onboarding context.
-- `docs/` — Auto-generated architecture docs (`architecture.md`, `component-inventory.md`, etc.). Regeneratable, not source of truth.
-- `patches/` — One `patch-package` patch for `react-native-webrtc+124.0.7`.
-- `TODOLIST.md` — Current P0/P1 punch list (Firebase setup, auth wiring, Play Store products, PostHog key, app rename).
-- `SETUP.md` — Developer setup guide.
+- `TODOLIST.md` — Current P0/P1 punch list (Play Store products, PostHog key, app rename).
+- `SETUP.md` — Developer setup guide (env vars, release build recipe).
 - `PLAY-STORE.md` — Google Play policy & compliance notes. Read before preparing a Play release or answering "is X allowed on Play?" (cross-app AnkiDroid module, mic foreground service, Data Safety, the `com.anonymous.*` package rename, Anki trademark).
-- `FREE-QUOTA.md` — Free trial / quota design + implementation plan (7 days OR 10 sessions, server-tracked). Read before touching `functions/src/` trial logic or `trialService.ts`. Notes the 3 gaps that make the trial non-functional today. Status: designed, not yet built.
+- `FREE-QUOTA.md` — Free trial / quota contract (7 days OR 10 sessions, server-tracked). Read before touching `functions/src/` trial logic or `trialService.ts`. Status: implemented and tested (2026-06-24, session 8).

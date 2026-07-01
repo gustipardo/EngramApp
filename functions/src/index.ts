@@ -23,8 +23,8 @@ const GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 // Duplicated here on purpose: functions is a standalone package and must not
 // import from the app source tree.
 const PRODUCT_PLAN: Record<string, "monthly" | "yearly"> = {
-  "com.ankiconversacionales.app.monthly": "monthly",
-  "com.ankiconversacionales.app.yearly": "yearly",
+  "com.engram.app.monthly": "monthly",
+  "com.engram.app.yearly": "yearly",
 };
 
 function planFromProductId(

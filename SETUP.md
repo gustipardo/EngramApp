@@ -40,9 +40,21 @@ This guide explains how to set up **Engram** (project slug: `RealtimeApiOnMobile
 
     _Note: Verify that `node_modules/expo-foreground-audio` and `node_modules/anki-droid` point to the correct directories._
 
-4.  **AI provider key:**
+4.  **Environment variables:**
 
-    The app uses Gemini Live as its single realtime backend. Add `GEMINI_API_KEY=...` to a `.env` file at the project root (read by `app.config.js` via `expo-constants`).
+    The app uses Gemini Live as its single realtime backend. Env vars live in a dotenv file at the project root, read by `app.config.js` into `expoConfig.extra`:
+
+    | Variable                                 | Required       | Purpose                                                                                                                                                                                                                              |
+    | ---------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+    | `GEMINI_API_KEY`                         | dev builds     | Raw Gemini key for the dev bypass path (payment gate off). Production never reads it — release builds fetch ephemeral tokens from the `mintLiveToken` Cloud Function, and `app.config.js` nulls this key when `APP_MODE=production`. |
+    | `APP_MODE`                               | release builds | `dev` / `production` / `test`. Unset → follows `__DEV__`. `production` is mandatory for releases (enforced by `scripts/build-release.sh`); `test` swaps the mic for `fakeMicSource`.                                                 |
+    | `GOOGLE_WEB_CLIENT_ID`                   | real-auth runs | OAuth 2.0 "Web client" id from the Firebase project; consumed by `_layout.tsx` → `configureGoogleSignIn`. Falls back to the project's hardcoded web client id when unset.                                                            |
+    | `AUTH_REQUIRED` / `PAYMENT_REQUIRED`     | optional (dev) | `true` forces the real auth / paywall flow in a dev binary (gates are bypassed by default). Impossible to bypass in release — see `src/config/env.ts`. Pass inline on the run command; no rebuild needed.                            |
+    | `AUTO_START_DECK` + `AUTO_START_ENABLED` | optional (dev) | Autostart a session for the named deck on launch (test tooling; see `DEBUGGING.md`).                                                                                                                                                 |
+    | `SKIP_ONBOARDING`                        | optional (dev) | Marks onboarding complete on first mount (used by `test-flow.sh` after `pm clear`).                                                                                                                                                  |
+    | `EXPO_PUBLIC_SESSION_DEBUG_VERBOSE`      | optional (dev) | Verbose session logging (`sessionDebugLogger.ts`; inlined by Metro).                                                                                                                                                                 |
+
+    Backend deploy (Cloud Functions): `cd functions && npm install && firebase deploy --only functions`. The Gemini key lives server-side in Cloud Secret Manager — set it once with `firebase functions:secrets:set GEMINI_API_KEY`.
 
 5.  **Run the Android App:**
 

@@ -17,8 +17,8 @@ Firebase project: **engram-3392a** · region **us-central1**.
 
 Field values written per tier:
 
-- **Full access** — `subscriptionStatus:"active"`, `subscriptionProductId: com.ankiconversacionales.app.yearly`. `computeTrialStatus` → `subscriptionActive:true`, `plan:"yearly"`. Effectively unlimited.
-- **Monthly** — `subscriptionStatus:"active"`, `subscriptionProductId: com.ankiconversacionales.app.monthly` → `plan:"monthly"`, unlimited.
+- **Full access** — `subscriptionStatus:"active"`, `subscriptionProductId: com.engram.app.yearly`. `computeTrialStatus` → `subscriptionActive:true`, `plan:"yearly"`. Effectively unlimited.
+- **Monthly** — `subscriptionStatus:"active"`, `subscriptionProductId: com.engram.app.monthly` → `plan:"monthly"`, unlimited.
 - **Free tier** — `subscriptionStatus:"none"`, fresh `trialStart` (now), `sessionCount:0` → `isActive:true`, 7 days / 10 sessions remaining. This is the only account that can hit the paywall.
 
 > "Full access" and "Monthly" differ only by plan label (yearly vs monthly). Both are active subscriptions = unlimited. The yearly one stands in for a comp/owner "full access" account.

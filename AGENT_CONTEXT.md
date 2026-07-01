@@ -317,8 +317,8 @@ app works for the happy path.
 
 ### Pre-launch blockers
 
-1. **Token broker for `GEMINI_API_KEY`** — today the key ships inside the APK.
-2. **`verifyPurchase` trusts the client** — missing Google Play Developer API call.
+1. ~~Token broker for `GEMINI_API_KEY`~~ — **CLOSED** (2026-07-01, `mintLiveToken` deployed; raw key nulled in production config, release recipe `scripts/build-release.sh` enforces `APP_MODE=production`).
+2. **`verifyPurchase` trusts the client** — productId now allow-listed (2026-07-01), but the Google Play Developer API token check is still missing.
 3. ~~No `firestore.rules`~~ — **CLOSED** (session 8, default-deny shipped).
 4. **Release APK uses debug keystore** — need real keystore + R8 before Play Store.
 5. **Over-broad permissions** — `BLUETOOTH`, `READ/WRITE_EXTERNAL_STORAGE` may be injected by plugins; audit before submission.

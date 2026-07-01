@@ -69,8 +69,8 @@ import {
   initBilling,
 } from "../billingService";
 
-const MONTHLY = "com.ankiconversacionales.app.monthly";
-const YEARLY = "com.ankiconversacionales.app.yearly";
+const MONTHLY = "com.engram.app.monthly";
+const YEARLY = "com.engram.app.yearly";
 
 beforeEach(() => {
   jest.clearAllMocks();

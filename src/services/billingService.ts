@@ -18,8 +18,8 @@ import { requiresPayment } from "../config/env";
 export type SubscriptionSku = "monthly_499" | "yearly_3999";
 
 const SKU_MAP: Record<SubscriptionSku, string> = {
-  monthly_499: "com.ankiconversacionales.app.monthly",
-  yearly_3999: "com.ankiconversacionales.app.yearly",
+  monthly_499: "com.engram.app.monthly",
+  yearly_3999: "com.engram.app.yearly",
 };
 
 /** The Play product IDs we recognise as our subscription, for restore. */

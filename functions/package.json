@@ -1,5 +1,5 @@
 {
-  "name": "anki-conversacionales-functions",
+  "name": "engram-functions",
   "main": "lib/index.js",
   "scripts": {
     "build": "tsc",

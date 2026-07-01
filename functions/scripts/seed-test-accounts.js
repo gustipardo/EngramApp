@@ -57,8 +57,8 @@ const auth = admin.auth();
 const FV = admin.firestore.FieldValue;
 
 // Product ids mirror billingService SKU_MAP.
-const MONTHLY = "com.ankiconversacionales.app.monthly";
-const YEARLY = "com.ankiconversacionales.app.yearly";
+const MONTHLY = "com.engram.app.monthly";
+const YEARLY = "com.engram.app.yearly";
 
 const ACCOUNTS = [
   {
