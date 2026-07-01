@@ -66,6 +66,17 @@ class SessionManager {
   private static readonly EVALUATING_RECOVERY_TIMEOUT_MS = 8000;
 
   /**
+   * Delayed-completion timer armed by the end_session tool (the AI gets
+   * 5 s to speak its summary before we flip to session_complete). Held so
+   * endSession()/endSessionFromNotification() can cancel it — otherwise it
+   * fired on whatever state existed 5 s later, yanking an already-idle app
+   * (or a freshly started NEW session) into session_complete and running
+   * onSessionComplete twice.
+   */
+  private endSessionToolTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly END_SESSION_SUMMARY_MS = 5000;
+
+  /**
    * Debounce timer for "user stopped speaking → evaluating". Gemini emits
    * `inputTranscription.text` chunks incrementally during the user's
    * utterance; the last chunk has no special marker. We treat 800ms of
@@ -1286,11 +1297,24 @@ class SessionManager {
       incorrect: stats.incorrect,
     });
 
-    // Trigger completion after AI gives summary
-    setTimeout(async () => {
+    // Trigger completion after AI gives summary. Cancelled by endSession /
+    // endSessionFromNotification; the phase guard covers any path that
+    // already completed or reset the session in the meantime.
+    this.clearEndSessionToolTimer();
+    this.endSessionToolTimer = setTimeout(async () => {
+      this.endSessionToolTimer = null;
+      const phase = useSessionStore.getState().phase;
+      if (phase === "idle" || phase === "session_complete") return;
       useSessionStore.getState().transitionTo("session_complete", "user_ended");
       await this.onSessionComplete();
-    }, 5000); // Wait for AI to speak summary
+    }, SessionManager.END_SESSION_SUMMARY_MS);
+  }
+
+  private clearEndSessionToolTimer(): void {
+    if (this.endSessionToolTimer) {
+      clearTimeout(this.endSessionToolTimer);
+      this.endSessionToolTimer = null;
+    }
   }
 
   /**
@@ -1340,6 +1364,7 @@ class SessionManager {
     webrtcManager.onConnectionDropped = null;
     this.phaseBeforeNetworkPause = null;
     this.clearEvaluatingRecovery();
+    this.clearEndSessionToolTimer();
     this.commitPendingUiAdvance("end_from_notification");
     this.lastAnsweredCardId = null;
     this.lastAnsweredCardOrd = null;
@@ -1384,6 +1409,7 @@ class SessionManager {
     webrtcManager.onConnectionDropped = null;
     this.phaseBeforeNetworkPause = null;
     this.clearEvaluatingRecovery();
+    this.clearEndSessionToolTimer();
     this.commitPendingUiAdvance("end_session");
     this.lastAnsweredCardId = null;
     this.lastAnsweredCardOrd = null;

@@ -691,3 +691,55 @@ describe("sessionManager — handleToolCall routing", () => {
     err.mockRestore();
   });
 });
+
+describe("sessionManager — end_session tool delayed completion (ghost timer)", () => {
+  // handleEndSessionTool gives the AI 5 s to speak its summary before
+  // flipping to session_complete. The timer used to be untracked: if the
+  // user ended the session (or a new one started) inside that window, it
+  // still fired — yanking an idle app or a fresh session into
+  // session_complete and running onSessionComplete a second time.
+
+  afterEach(() => {
+    (sessionManager as any).clearEndSessionToolTimer();
+    jest.useRealTimers();
+  });
+
+  it("completes the session 5s after the tool when still active", async () => {
+    jest.useFakeTimers();
+    useSessionStore.getState().transitionTo("giving_feedback", "test");
+
+    await (sessionManager as any).handleEndSessionTool("call-1");
+    expect(useSessionStore.getState().phase).toBe("giving_feedback");
+
+    await jest.advanceTimersByTimeAsync(5000);
+
+    expect(useSessionStore.getState().phase).toBe("session_complete");
+    expect(mockTriggerSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fire after endSession() cancelled it", async () => {
+    jest.useFakeTimers();
+    useSessionStore.getState().transitionTo("giving_feedback", "test");
+
+    await (sessionManager as any).handleEndSessionTool("call-2");
+    sessionManager.endSession();
+    expect(useSessionStore.getState().phase).toBe("idle");
+
+    await jest.advanceTimersByTimeAsync(6000);
+
+    expect(useSessionStore.getState().phase).toBe("idle");
+    expect(mockTriggerSync).not.toHaveBeenCalled();
+  });
+
+  it("phase guard: does not double-complete an already-complete session", async () => {
+    jest.useFakeTimers();
+    useSessionStore.getState().transitionTo("giving_feedback", "test");
+
+    await (sessionManager as any).handleEndSessionTool("call-3");
+    useSessionStore.getState().transitionTo("session_complete", "no_more_cards");
+
+    await jest.advanceTimersByTimeAsync(6000);
+
+    expect(mockTriggerSync).not.toHaveBeenCalled();
+  });
+});
