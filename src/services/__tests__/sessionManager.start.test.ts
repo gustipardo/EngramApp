@@ -450,3 +450,42 @@ describe("sessionManager.endSessionIfActive() — screen-unmount teardown", () =
     expect(mockDisconnect).not.toHaveBeenCalled();
   });
 });
+
+describe("sessionManager.startSession() — failure always disconnects", () => {
+  // A failure after Step 1 used to leave the WebSocket connected; the retry
+  // then skipped connect() and registered the event handlers a second time
+  // on the same live manager (double tool-call handling, double write-back).
+  // The catch block now disconnects on any start failure so a retry always
+  // reconnects fresh.
+
+  it("disconnects when the AI's first response times out (post-connect failure)", async () => {
+    // mockReset drains once-values queued (and deliberately not consumed)
+    // by the TOCTOU test above, which would otherwise shadow this queue.
+    mockNativeGetDueCards.mockReset();
+    mockNativeGetDueCards.mockResolvedValueOnce([makeNativeCard(901)]);
+    mockWaitForNextResponseDone.mockRejectedValueOnce(
+      new Error("Timed out waiting for response.done"),
+    );
+
+    await expect(sessionManager.startSession()).rejects.toThrow(/Timed out/);
+
+    expect(mockDisconnect).toHaveBeenCalled();
+    expect(useSessionStore.getState().phase).toBe("error");
+  });
+
+  it("disconnects when card loading fails after connect", async () => {
+    mockNativeGetDueCards.mockReset();
+    mockNativeGetDueCards.mockRejectedValueOnce(
+      new Error("ContentProvider unavailable"),
+    );
+
+    // ankiBridge wraps failures in a plain BridgeError object (not an
+    // Error instance), so match on its shape rather than toThrow().
+    await expect(sessionManager.startSession()).rejects.toMatchObject({
+      code: "QUERY_FAILED",
+    });
+
+    expect(mockDisconnect).toHaveBeenCalled();
+    expect(useSessionStore.getState().phase).toBe("error");
+  });
+});

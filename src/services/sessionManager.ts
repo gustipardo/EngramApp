@@ -342,6 +342,18 @@ class SessionManager {
       });
       AnalyticsEvents.sessionError(error?.message || "start_failed");
       stopAudioLevelTracking();
+      // Tear the connection down on ANY start failure. A failure after
+      // Step 1 (e.g. sendFirstCard timeout) used to leave the WebSocket
+      // open; the user's "Try Again" then skipped connect() and ran
+      // registerEventHandlers() a second time on the same live manager,
+      // so every tool call was handled twice (double write-back, double
+      // stats). disconnect() clears the handler map, making the retry
+      // start from a clean slate.
+      try {
+        webrtcManager.disconnect();
+      } catch (_) {
+        /* best-effort */
+      }
       transitionTo("error", "start_failed");
       throw error;
     }
