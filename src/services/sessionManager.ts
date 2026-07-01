@@ -1337,6 +1337,21 @@ class SessionManager {
   }
 
   /**
+   * End the session only if one is actually running. Safe to call from
+   * screen unmount cleanups: reads the phase from the store at call time
+   * (a React cleanup closure captures stale state — see BUG session.tsx
+   * unmount, audit 2026-07-01), so navigating away mid-session tears the
+   * session down instead of leaving the mic, WebSocket and foreground
+   * service alive. Returns true when a teardown ran.
+   */
+  endSessionIfActive(): boolean {
+    const phase = useSessionStore.getState().phase;
+    if (phase === "idle") return false;
+    this.endSession();
+    return true;
+  }
+
+  /**
    * End the current session immediately (e.g. user taps "End Session" in-app or navigates away).
    * Does NOT show summary — caller is responsible for navigation.
    */

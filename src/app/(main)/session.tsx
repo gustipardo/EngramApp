@@ -495,16 +495,18 @@ export default function SessionScreen() {
     handleStartSession();
   }, [handleStartSession]);
 
-  // Auto-start session on mount
+  // Auto-start session on mount. The cleanup must NOT read `sessionPhase`
+  // from this closure — with `[]` deps it is frozen at the mount-time value
+  // ('idle'), which made the old `if (sessionPhase !== "idle")` guard a
+  // permanent no-op: hardware-back left the mic, WebSocket and foreground
+  // service running. endSessionIfActive reads the live phase from the store.
   useEffect(() => {
     if (sessionPhase === "idle") {
       handleStartSession();
     }
 
     return () => {
-      if (sessionPhase !== "idle" && sessionPhase !== "session_complete") {
-        sessionManager.endSession();
-      }
+      sessionManager.endSessionIfActive();
     };
   }, []);
 

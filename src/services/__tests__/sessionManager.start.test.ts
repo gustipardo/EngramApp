@@ -99,17 +99,15 @@ const mockNativeTriggerSync = jest.fn().mockResolvedValue(undefined);
 const mockNativeIsInstalled = jest.fn().mockResolvedValue(true);
 const mockNativeHasApiPermission = jest.fn().mockResolvedValue(true);
 const mockNativeGetDeckNames = jest.fn().mockResolvedValue(["Aws Exam SA"]);
-const mockNativeGetDeckInfo = jest
-  .fn()
-  .mockResolvedValue([
-    {
-      deckName: "Aws Exam SA",
-      dueCount: 10,
-      newCount: 5,
-      learnCount: 0,
-      reviewCount: 5,
-    },
-  ]);
+const mockNativeGetDeckInfo = jest.fn().mockResolvedValue([
+  {
+    deckName: "Aws Exam SA",
+    dueCount: 10,
+    newCount: 5,
+    learnCount: 0,
+    reviewCount: 5,
+  },
+]);
 jest.mock("anki-droid", () => ({
   __esModule: true,
   default: {
@@ -421,5 +419,34 @@ describe("sessionManager.startSession() — trial quota (Step 1b)", () => {
 
     expect(mockRecordSession).toHaveBeenCalledTimes(1);
     expect(useSessionStore.getState().phase).toBe("awaiting_answer");
+  });
+});
+
+describe("sessionManager.endSessionIfActive() — screen-unmount teardown", () => {
+  // Regression for the stale-closure unmount bug: session.tsx's cleanup used
+  // to read a phase captured at mount ('idle') and never ended the session,
+  // leaving the mic, WebSocket and foreground service running after a
+  // hardware-back. The fix routes cleanup through endSessionIfActive, which
+  // reads the live phase from the store.
+
+  it("tears down a running session", async () => {
+    mockNativeGetDueCards.mockResolvedValueOnce([makeNativeCard(801)]);
+    await sessionManager.startSession();
+    expect(useSessionStore.getState().phase).toBe("awaiting_answer");
+
+    const ended = sessionManager.endSessionIfActive();
+
+    expect(ended).toBe(true);
+    expect(mockDisconnect).toHaveBeenCalled();
+    expect(useSessionStore.getState().phase).toBe("idle");
+  });
+
+  it("is a no-op when no session is running", () => {
+    expect(useSessionStore.getState().phase).toBe("idle");
+
+    const ended = sessionManager.endSessionIfActive();
+
+    expect(ended).toBe(false);
+    expect(mockDisconnect).not.toHaveBeenCalled();
   });
 });
