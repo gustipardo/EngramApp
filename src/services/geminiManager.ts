@@ -1,5 +1,5 @@
-import Constants from "expo-constants";
 import ExpoForegroundAudioModule from "expo-foreground-audio";
+import { getLiveCredential, LiveCredential } from "./tokenService";
 import { micSource } from "./micSource";
 import { useConnectionStore } from "../stores/useConnectionStore";
 import { sessionLog } from "./sessionDebugLogger";
@@ -48,15 +48,17 @@ class GeminiManager {
   // API key & WebSocket URL
   // -------------------------------------------------------------------------
 
-  private getApiKey(): string {
-    const key = Constants.expoConfig?.extra?.geminiApiKey;
-    if (!key) throw new Error("GEMINI_API_KEY not found in app config");
-    return key;
-  }
-
-  private getWsUrl(): string {
-    const apiKey = this.getApiKey();
-    return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+  // Build the Live WebSocket URL from a credential (token broker, blocker #1).
+  //  - ephemeral token: v1alpha endpoint + `?access_token=` (Live-only, the only
+  //    version that accepts ephemeral tokens).
+  //  - raw dev key: legacy v1beta endpoint + `?key=` (dev bypass only).
+  private buildWsUrl(cred: LiveCredential): string {
+    const base =
+      "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage";
+    if (cred.kind === "token") {
+      return `${base}.v1alpha.GenerativeService.BidiGenerateContent?access_token=${cred.value}`;
+    }
+    return `${base}.v1beta.GenerativeService.BidiGenerateContent?key=${cred.value}`;
   }
 
   // -------------------------------------------------------------------------
@@ -166,11 +168,16 @@ class GeminiManager {
   // WebSocket management
   // -------------------------------------------------------------------------
 
-  private openWebSocket(): Promise<void> {
+  private async openWebSocket(): Promise<void> {
+    // Fetch the credential first (ephemeral token from the broker, or the raw
+    // dev key when the payment gate is bypassed). Network call in the token
+    // case — do it before entering the connection Promise.
+    const cred = await getLiveCredential();
+    const url = this.buildWsUrl(cred);
+
     return new Promise((resolve, reject) => {
-      const url = this.getWsUrl();
       sessionLog.debug("Gemini", "opening WebSocket", {
-        url: url.replace(/key=[^&]+/, "key=***"),
+        url: url.replace(/(access_token|key)=[^&]+/, "$1=***"),
       });
       this.ws = new WebSocket(url);
 

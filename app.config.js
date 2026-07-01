@@ -3,7 +3,16 @@ const appJson = require("./app.json");
 module.exports = {
   ...appJson.expo,
   extra: {
-    geminiApiKey: process.env.GEMINI_API_KEY ?? null,
+    // The raw Gemini key must NEVER ship in a production/release binary — the
+    // app fetches a short-lived ephemeral token from the `mintLiveToken` Cloud
+    // Function instead (token broker, pre-launch blocker #1). It's only baked in
+    // for dev/test builds, where tokenService falls back to it when the payment
+    // gate is bypassed. Release builds MUST set APP_MODE=production so this is
+    // null in the APK.
+    geminiApiKey:
+      process.env.APP_MODE === "production"
+        ? null
+        : (process.env.GEMINI_API_KEY ?? null),
     appMode: process.env.APP_MODE ?? null,
     // Google Sign-In: OAuth 2.0 "Web client" id from the Firebase project
     // (Authentication → Sign-in method → Google, or GCP Credentials). Read by
