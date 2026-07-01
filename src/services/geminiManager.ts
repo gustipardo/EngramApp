@@ -49,14 +49,16 @@ class GeminiManager {
   // -------------------------------------------------------------------------
 
   // Build the Live WebSocket URL from a credential (token broker, blocker #1).
-  //  - ephemeral token: v1alpha endpoint + `?access_token=` (Live-only, the only
-  //    version that accepts ephemeral tokens).
+  //  - ephemeral token: v1alpha `BidiGenerateContentConstrained` + `?access_token=`.
+  //    The plain `BidiGenerateContent` method rejects ephemeral tokens with
+  //    1008 "unregistered callers" — tokens only work on the Constrained RPC
+  //    (which enforces the token's liveConnectConstraints).
   //  - raw dev key: legacy v1beta endpoint + `?key=` (dev bypass only).
   private buildWsUrl(cred: LiveCredential): string {
     const base =
       "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage";
     if (cred.kind === "token") {
-      return `${base}.v1alpha.GenerativeService.BidiGenerateContent?access_token=${cred.value}`;
+      return `${base}.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${cred.value}`;
     }
     return `${base}.v1beta.GenerativeService.BidiGenerateContent?key=${cred.value}`;
   }
