@@ -438,10 +438,11 @@ class SessionManager {
     // Decks without an entry fall back to false (read-back on incorrect only).
     const alwaysReadBack = deckReadBack[deckName] ?? false;
     const customInstructions = deckInstructions[deckName] || undefined;
-    // Per-deck language: drives both the system prompt's "Language: X ONLY"
-    // line and Gemini Live's speechConfig.languageCode (TTS voice + tighter
-    // recognition). Undefined → English fallback inside getSystemPrompt and
-    // server default for speechConfig.
+    // Per-deck language: drives the system prompt's "Language: X ONLY"
+    // line ONLY. It is passed on updateSession's shape but geminiManager
+    // deliberately drops it before the wire — the native-audio model
+    // rejects speechConfig.languageCode (WS close 1007, see BUG 16).
+    // Undefined → English fallback inside getSystemPrompt.
     const languageCode = deckLanguages[deckName] || undefined;
     const systemPrompt = getSystemPrompt(
       deckName,
@@ -1001,6 +1002,7 @@ class SessionManager {
     transitionTo("evaluating", "tool_called");
 
     const { selectedDeck: deckForAnswer } = useSettingsStore.getState();
+    let answerAndRefill: Promise<void> | null = null;
     if (answeredCardId != null && answeredCardOrd != null && deckForAnswer) {
       this.lastAnsweredCardId = answeredCardId;
       this.lastAnsweredCardOrd = answeredCardOrd;
@@ -1019,22 +1021,23 @@ class SessionManager {
         skip: isSkip,
       });
       const ANSWER_REFILL_TIMEOUT_MS = 500;
+      answerAndRefill = (async () => {
+        try {
+          await ankiBridge.answerCard(
+            deckForAnswer,
+            answeredCardId,
+            answeredCardOrd,
+            pass,
+          );
+        } catch (err) {
+          sessionLog.warn("AnkiDroid", "write-back error (non-fatal)", {
+            error: String(err),
+          });
+        }
+        await fetchAndAppendNextCard(deckForAnswer);
+      })();
       await Promise.race([
-        (async () => {
-          try {
-            await ankiBridge.answerCard(
-              deckForAnswer,
-              answeredCardId,
-              answeredCardOrd,
-              pass,
-            );
-          } catch (err) {
-            sessionLog.warn("AnkiDroid", "write-back error (non-fatal)", {
-              error: String(err),
-            });
-          }
-          await fetchAndAppendNextCard(deckForAnswer);
-        })(),
+        answerAndRefill,
         new Promise<void>((resolve) =>
           setTimeout(resolve, ANSWER_REFILL_TIMEOUT_MS),
         ),
@@ -1045,7 +1048,7 @@ class SessionManager {
     // visual card stays on the current one while the AI gives feedback.
     // Advance happens on response.done so card display stays in sync
     // with AI speech.
-    const nextCard = peekNextCard();
+    let nextCard = peekNextCard();
     const stats = useSessionStore.getState().stats;
     // Compute remaining from the AnkiDroid due-count snapshot taken at
     // startSession, not from the in-memory cache. Under the BUG 5 v3b
@@ -1060,6 +1063,25 @@ class SessionManager {
     const { totalDueAtStart } = useSessionStore.getState();
     const answered = stats.correct + stats.incorrect;
     const remainingCards = Math.max(0, totalDueAtStart - answered);
+
+    // Guard against the 500 ms race falsely ending the session: if the
+    // answer+refill chain lost the race (slow AnkiDroid), peekNextCard()
+    // returns undefined even though the deck still has due cards, and the
+    // else-branch below would declare no_more_cards mid-deck. When the due
+    // snapshot says cards remain, grant the refill a grace window and
+    // re-peek. Bounded so a hung ContentProvider still can't wedge the
+    // session — after the grace expires we fall through to the old
+    // behavior.
+    if (!nextCard && answerAndRefill && remainingCards > 0) {
+      const ANSWER_REFILL_GRACE_MS = 5000;
+      await Promise.race([
+        answerAndRefill,
+        new Promise<void>((resolve) =>
+          setTimeout(resolve, ANSWER_REFILL_GRACE_MS),
+        ),
+      ]);
+      nextCard = peekNextCard();
+    }
 
     // Format result
     const result = formatToolResult(

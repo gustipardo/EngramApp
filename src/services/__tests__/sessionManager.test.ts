@@ -743,3 +743,57 @@ describe("sessionManager — end_session tool delayed completion (ghost timer)",
     expect(mockTriggerSync).not.toHaveBeenCalled();
   });
 });
+
+describe("sessionManager — slow answer+refill must not falsely end the session", () => {
+  // The 500 ms Promise.race protects Gemini's tool-call deadline, but when
+  // the answer+refill chain loses the race, peekNextCard() is empty and the
+  // no_more_cards branch used to end the session mid-deck. With cards still
+  // due (per the totalDueAtStart snapshot) the handler now grants the refill
+  // a bounded grace window and re-peeks.
+
+  afterEach(() => {
+    (sessionManager as any).clearEvaluatingRecovery();
+    (sessionManager as any).commitPendingUiAdvance("test_cleanup");
+    jest.useRealTimers();
+  });
+
+  it("waits out a slow AnkiDroid write-back instead of declaring no_more_cards", async () => {
+    jest.useFakeTimers();
+    useSessionStore.getState().setTotalDueAtStart(5);
+    mockAnswerCard.mockImplementation(
+      () => new Promise((r) => setTimeout(() => r(true), 800)),
+    );
+    mockPeekNextCard.mockReset();
+    mockPeekNextCard
+      .mockReturnValueOnce(undefined)
+      .mockReturnValue(NEXT_CARD);
+
+    const call = (sessionManager as any).handleEvaluateAndMoveNext("call_g1", {
+      user_response_quality: "correct",
+      feedback_text: "ok",
+    });
+    await jest.advanceTimersByTimeAsync(900);
+    await call;
+
+    expect(useSessionStore.getState().phase).not.toBe("session_complete");
+    expect(mockFetchAndAppendNextCard).toHaveBeenCalledTimes(1);
+    expect(mockAdvanceCacheIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it("still ends the session when the refill never lands (grace bounded)", async () => {
+    jest.useFakeTimers();
+    useSessionStore.getState().setTotalDueAtStart(5);
+    mockAnswerCard.mockImplementation(() => new Promise(() => {}));
+    mockPeekNextCard.mockReset();
+    mockPeekNextCard.mockReturnValue(undefined);
+
+    const call = (sessionManager as any).handleEvaluateAndMoveNext("call_g2", {
+      user_response_quality: "correct",
+      feedback_text: "ok",
+    });
+    await jest.advanceTimersByTimeAsync(6000);
+    await call;
+
+    expect(useSessionStore.getState().phase).toBe("session_complete");
+  });
+});

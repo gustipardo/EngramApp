@@ -13,9 +13,10 @@ export interface SettingsStore {
   deckReadBack: Record<string, boolean>;
   deckInstructions: Record<string, string>;
   // BCP-47 language code per deck (e.g. 'en-US', 'es-ES', 'fr-FR').
-  // Drives both the system prompt's "Language: X ONLY" line and
-  // Gemini Live's `speechConfig.languageCode`. Decks without an entry
-  // fall back to 'en-US'.
+  // Drives the system prompt's "Language: X ONLY" line only — the
+  // native-audio Gemini model rejects `speechConfig.languageCode`, so
+  // geminiManager drops it before the wire (BUG 16). Decks without an
+  // entry fall back to 'en-US'.
   deckLanguages: Record<string, string>;
   setSelectedDeck: (deck: string | null) => void;
   setOnboardingCompleted: (completed: boolean) => void;
