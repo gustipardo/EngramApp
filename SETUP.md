@@ -52,6 +52,16 @@ This guide explains how to set up **Engram** (project slug: `RealtimeApiOnMobile
     npm run android
     ```
 
+## Release builds
+
+Always build releases through the wrapper script — never a bare `--variant release`:
+
+```bash
+scripts/build-release.sh
+```
+
+It exports `APP_MODE=production`, which makes `app.config.js` null out `extra.geminiApiKey` so the raw Gemini key never lands in the APK bundle (release runtime uses the `mintLiveToken` token broker instead). A bare `npx expo run:android --variant release` without the flag bakes the key in. `app.config.js` also prints a warning whenever a non-production config evaluation would embed the key.
+
 ## Troubleshooting
 
 - **Dependency Conflicts:** If `npm install` fails, try deleting `node_modules` and `package-lock.json` and running `npm install --legacy-peer-deps` again.

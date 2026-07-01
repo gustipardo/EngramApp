@@ -1,5 +1,18 @@
 const appJson = require("./app.json");
 
+// Guard rail for the release recipe (scripts/build-release.sh): any config
+// evaluation that would bake the raw key into `extra` gets a loud warning.
+// Expected (and harmless) on every dev run; if you see it during a RELEASE
+// build, stop — you forgot APP_MODE=production and the key would ship in
+// the APK bundle.
+if (process.env.APP_MODE !== "production" && process.env.GEMINI_API_KEY) {
+  console.warn(
+    "[app.config] GEMINI_API_KEY is being baked into extra.geminiApiKey " +
+      "(APP_MODE != production). Fine for dev; NEVER build a release this " +
+      "way — use scripts/build-release.sh.",
+  );
+}
+
 module.exports = {
   ...appJson.expo,
   extra: {
