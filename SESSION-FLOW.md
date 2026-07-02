@@ -407,9 +407,25 @@ Pad adds 0 cards. Session loads exactly the scheduler head (1 card). User answer
 
 ---
 
-### BUG 9 — Session locks in "Your Turn" loop after silent eval turn **[OPEN, intermittent]**
+### BUG 9 — Session locks in "Your Turn" loop after silent eval turn **[FIXED 2026-07-02 — root cause confirmed on the wire; auto cold-resume shipped]**
 
-**Status:** Open. Intermittent — does not reproduce on every session. Reporter: user, sesión 4 (2026-05-24). Logs not yet captured for a confirmed occurrence; needs persistent session-log capture before root cause can be confirmed.
+**Status:** FIXED (client-side mitigation of a server/model glitch). Root cause confirmed 2026-07-01/02, first on-device (Pixel 9 release build, `Engram Test — AWS SA`) and then reproduced deterministically off-device against the live API with the app's exact setup payload.
+
+**Confirmed root cause — TWO stacked bugs:**
+
+1. **Ctrl-token turn (the wedge itself).** Gemini sometimes answers an evaluation turn with a loop of literal control tokens — the output transcription streams `<ctrl46><ctrl46><ctrl46><ctrl46>`, zero audio chunks, no tool call, then `turnComplete`. Once in this state the model ignores text nudges (tested: SYSTEM-NOTE nudge → more ctrl turns, 0/2 recoveries), and reconnecting WITH the `sessionResumption` handle restores the _poisoned_ context — the very next eval wedges again (tested: 0/1). The only working recovery is a **cold reconnect**: drop the handle, reconnect, rebuild context app-side with `getResumeMessage` (tested: 2/2 recoveries; user loses only the in-flight answer).
+2. **`prefixPaddingMs` kills input detection (why re-answering never worked).** Bisected field-by-field against the live API: sending `automaticActivityDetection.prefixPaddingMs: 300` — alone or with the other fields — makes the server stop emitting `inputTranscription` and never commit user turns. This is hypothesis 9A's "Gemini stopped processing input": after the wedge bounced the phase back to "Your Turn", the deaf VAD guaranteed the re-answer went nowhere, making the lock permanent.
+
+**Shipped fix (2026-07-02):**
+
+- `geminiManager.updateSession`: `prefixPaddingMs` removed from the VAD block (the other three fields stay — they fix the older multi-minute-stall problem). Regression test pins the exact block.
+- `geminiManager.clearSessionResumptionHandle()`: new method so recovery can force a cold resume.
+- `sessionManager`: wedge detection + auto-recovery. A `<ctrlNN>` transcript chunk during `evaluating` flags the turn; `response.done` on a flagged turn triggers `recoverFromWedgedSession` immediately. Fallback: the 2nd consecutive 8 s `evaluating_recovery` bounce (silent wedge without ctrl tokens) triggers the same recovery. Recovery = clear handle → mute → `reconnecting` phase → existing `attemptReconnectAndResume` (which re-sends the current card via `getResumeMessage`) → back to `awaiting_answer`. Detectors reset on every successful tool call and on session end.
+- Tests: `sessionManager.wedgeRecovery.test.ts` (7 cases) + 2 in `geminiManager.sessionResumption.test.ts`.
+
+Original analysis below kept for history.
+
+**Original status:** Open. Intermittent — does not reproduce on every session. Reporter: user, sesión 4 (2026-05-24). Logs not yet captured for a confirmed occurrence; needs persistent session-log capture before root cause can be confirmed.
 
 **Symptom (verbatim from user):**
 

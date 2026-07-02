@@ -509,11 +509,20 @@ class GeminiManager {
         // function call. HIGH end-of-speech sensitivity + a tighter silence
         // window makes Gemini commit the user turn promptly when they stop
         // talking.
+        //
+        // `prefixPaddingMs` MUST stay out of this block. Setting it (even to
+        // the modest 300 ms we used to send) silently breaks speech detection
+        // on this model: the server stops emitting `inputTranscription` and
+        // never commits user turns — the session looks deaf. Verified against
+        // the live API 2026-07-01 by bisecting this exact config field by
+        // field ({prefixPaddingMs: 300} alone → input dead; the remaining
+        // three fields → input fine). This was the reason re-answering a
+        // wedged session (BUG 9) never worked: after the first turn, VAD
+        // re-armed with the padding requirement and went permanently deaf.
         realtimeInputConfig: {
           automaticActivityDetection: {
             startOfSpeechSensitivity: "START_SENSITIVITY_HIGH",
             endOfSpeechSensitivity: "END_SENSITIVITY_HIGH",
-            prefixPaddingMs: 300,
             silenceDurationMs: 800,
           },
         },
@@ -711,6 +720,22 @@ class GeminiManager {
         },
       }),
     );
+  }
+
+  /**
+   * Drop the cached session-resumption handle so the NEXT reconnect starts
+   * with a cold context instead of restoring the previous conversation.
+   *
+   * Used by the BUG 9 wedge recovery: when the model enters a control-token
+   * loop (silent turns of literal `<ctrl46>` transcripts, no audio, no tool
+   * call), resuming with the handle restores the poisoned context and the
+   * very next evaluation wedges again (verified against the live API
+   * 2026-07-01: handle-resume → wedge reproduced; cold resume + app-level
+   * resume message → recovered, 2/2). sessionManager rebuilds the context
+   * app-side via getResumeMessage after the cold reconnect.
+   */
+  clearSessionResumptionHandle(): void {
+    this.sessionResumptionHandle = null;
   }
 
   waitForNextResponseDone(): Promise<void> {

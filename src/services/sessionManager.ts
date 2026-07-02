@@ -71,6 +71,30 @@ class SessionManager {
   private static readonly EVALUATING_RECOVERY_TIMEOUT_MS = 8000;
 
   /**
+   * BUG 9 — wedged-session detection. Root cause (confirmed against the
+   * live API 2026-07-01): the model sometimes answers an evaluation turn
+   * with a loop of literal control tokens (`<ctrl46>` in the output
+   * transcription), no audio and no tool call. Once in that state it
+   * ignores text nudges, and resuming with the sessionResumption handle
+   * restores the poisoned context (the next eval wedges again). The only
+   * recovery that works is a COLD reconnect: drop the handle, reconnect,
+   * and rebuild context app-side with getResumeMessage.
+   *
+   * Detection is two-pronged:
+   *  - `sawCtrlTokenTurnInEvaluating`: a `<ctrlNN>` transcript chunk during
+   *    `evaluating` marks the turn as a wedge; `response.done` then
+   *    triggers recovery immediately (no need to wait out the 8 s timer).
+   *  - `evaluatingRecoveryBounces`: if the 8 s recovery timer fires twice
+   *    for the same card without a tool call in between (silent wedge with
+   *    no ctrl tokens), the second bounce triggers recovery instead of
+   *    another cosmetic "Your Turn" flip.
+   */
+  private sawCtrlTokenTurnInEvaluating = false;
+  private evaluatingRecoveryBounces = 0;
+  private wedgeRecoveryInFlight = false;
+  private static readonly CTRL_TOKEN_RE = /<ctrl\d+>/;
+
+  /**
    * Delayed-completion timer armed by the end_session tool (the AI gets
    * 5 s to speak its summary before we flip to session_complete). Held so
    * endSession()/endSessionFromNotification() can cancel it — otherwise it
@@ -560,6 +584,13 @@ class SessionManager {
       if (phase === "giving_feedback") {
         useSessionStore.getState().transitionTo("awaiting_answer", "ai_done");
       }
+      // BUG 9: the eval turn ended as a ctrl-token loop (no audio, no tool
+      // call). Waiting is pointless — the model ignores further input in
+      // this state. Cold-resume right away.
+      if (phase === "evaluating" && this.sawCtrlTokenTurnInEvaluating) {
+        this.sawCtrlTokenTurnInEvaluating = false;
+        this.recoverFromWedgedSession("ctrl_token_turn").catch(() => {});
+      }
     });
 
     // Handle user speaking (logging only — debounce cancel is below).
@@ -583,6 +614,15 @@ class SessionManager {
       const chunk =
         typeof event.transcript === "string" ? event.transcript : "";
       sessionLog.event("AI", "transcript", { text: chunk });
+      // BUG 9 wedge signature: literal control tokens leaking into the
+      // output transcription during an eval turn. Flag it; response.done
+      // acts on the flag.
+      if (
+        SessionManager.CTRL_TOKEN_RE.test(chunk) &&
+        useSessionStore.getState().phase === "evaluating"
+      ) {
+        this.sawCtrlTokenTurnInEvaluating = true;
+      }
       if (!this.pendingUiNextCardFront) return;
       this.pendingUiTranscriptAccum = (
         this.pendingUiTranscriptAccum +
@@ -955,6 +995,11 @@ class SessionManager {
       call_id: callId,
     });
 
+    // A real tool call means the model is alive — reset the BUG 9 wedge
+    // detectors so a healthy session never accumulates stale bounces.
+    this.evaluatingRecoveryBounces = 0;
+    this.sawCtrlTokenTurnInEvaluating = false;
+
     const { transitionTo, recordAnswer } = useSessionStore.getState();
 
     // Get current card's back for feedback
@@ -1171,15 +1216,69 @@ class SessionManager {
     this.evaluatingRecoveryTimer = setTimeout(() => {
       const phase = useSessionStore.getState().phase;
       if (phase !== "evaluating") return;
+      this.evaluatingRecoveryBounces += 1;
+      // Second silent bounce on the same card: the model isn't coming
+      // back on its own (BUG 9). A cosmetic "Your Turn" flip would just
+      // strand the user re-answering into a dead session — cold-resume
+      // instead.
+      if (this.evaluatingRecoveryBounces >= 2) {
+        this.recoverFromWedgedSession("evaluating_recovery_repeat").catch(
+          () => {},
+        );
+        return;
+      }
       sessionLog.warn(
         "SessionManager",
         "evaluating-recovery: no AI audio after tool result — forcing awaiting_answer",
-        { timeout_ms: SessionManager.EVALUATING_RECOVERY_TIMEOUT_MS },
+        {
+          timeout_ms: SessionManager.EVALUATING_RECOVERY_TIMEOUT_MS,
+          bounce: this.evaluatingRecoveryBounces,
+        },
       );
       useSessionStore
         .getState()
         .transitionTo("awaiting_answer", "evaluating_recovery");
     }, SessionManager.EVALUATING_RECOVERY_TIMEOUT_MS);
+  }
+
+  /**
+   * BUG 9 recovery: the Gemini session is wedged (ctrl-token loop or two
+   * silent recovery bounces). Text nudges don't unwedge it and resuming
+   * with the sessionResumption handle restores the poisoned context, so:
+   * drop the handle, reconnect cold, and rebuild the conversation with the
+   * app-level resume message (resumeAfterReconnect → getResumeMessage).
+   * The user loses only the in-flight answer — the current card is
+   * re-asked and the session continues.
+   */
+  private async recoverFromWedgedSession(reason: string): Promise<void> {
+    if (this.wedgeRecoveryInFlight) return;
+    const phase = useSessionStore.getState().phase;
+    const recoverablePhases = [
+      "evaluating",
+      "awaiting_answer",
+      "giving_feedback",
+    ];
+    if (!recoverablePhases.includes(phase)) return;
+    this.wedgeRecoveryInFlight = true;
+    sessionLog.warn(
+      "SessionManager",
+      "wedged Gemini session detected — cold reconnect + app-level resume",
+      { reason, phase },
+    );
+    this.clearEvaluatingRecovery();
+    this.sawCtrlTokenTurnInEvaluating = false;
+    this.evaluatingRecoveryBounces = 0;
+    try {
+      webrtcManager.clearSessionResumptionHandle();
+      webrtcManager.setMicrophoneMuted(true);
+      // Resume back into awaiting_answer: the wedged answer was never
+      // graded, so the user re-answers the re-asked current card.
+      this.phaseBeforeNetworkPause = "awaiting_answer";
+      useSessionStore.getState().transitionTo("reconnecting", reason);
+      await this.attemptReconnectAndResume();
+    } finally {
+      this.wedgeRecoveryInFlight = false;
+    }
   }
 
   private clearEvaluatingRecovery(): void {
@@ -1394,6 +1493,8 @@ class SessionManager {
     webrtcManager.onConnectionDropped = null;
     this.phaseBeforeNetworkPause = null;
     this.clearEvaluatingRecovery();
+    this.evaluatingRecoveryBounces = 0;
+    this.sawCtrlTokenTurnInEvaluating = false;
     this.clearEndSessionToolTimer();
     this.commitPendingUiAdvance("end_from_notification");
     this.lastAnsweredCardId = null;
@@ -1439,6 +1540,8 @@ class SessionManager {
     webrtcManager.onConnectionDropped = null;
     this.phaseBeforeNetworkPause = null;
     this.clearEvaluatingRecovery();
+    this.evaluatingRecoveryBounces = 0;
+    this.sawCtrlTokenTurnInEvaluating = false;
     this.clearEndSessionToolTimer();
     this.commitPendingUiAdvance("end_session");
     this.lastAnsweredCardId = null;

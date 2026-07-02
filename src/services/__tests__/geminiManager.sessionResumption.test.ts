@@ -140,6 +140,24 @@ describe("geminiManager — session resumption", () => {
     expect((geminiManager as any).sessionResumptionHandle).toBeNull();
   });
 
+  it("clearSessionResumptionHandle drops the cached handle so the next setup is cold (BUG 9 wedge recovery)", async () => {
+    await geminiManager.connect();
+    await handle({
+      sessionResumptionUpdate: { newHandle: "H-WEDGED", resumable: true },
+    });
+    expect((geminiManager as any).sessionResumptionHandle).toBe("H-WEDGED");
+
+    // Wedge recovery drops the handle so the reconnect does NOT restore the
+    // poisoned conversation context (a handle-resume reproduces the
+    // ctrl-token wedge on the very next eval — verified against the live
+    // API 2026-07-01).
+    geminiManager.clearSessionResumptionHandle();
+    (geminiManager as any).isSetupDone = false;
+    await completeSetup({ instructions: "sys" });
+
+    expect(lastSetup().sessionResumption).toEqual({});
+  });
+
   it("preserves the handle across a reconnect but clears it on a fresh connect", async () => {
     // Reconnect path: isReconnecting is set by reconnect() before connect().
     (geminiManager as any).sessionResumptionHandle = "H3";
@@ -151,6 +169,24 @@ describe("geminiManager — session resumption", () => {
     (geminiManager as any).isReconnecting = false;
     await geminiManager.connect();
     expect((geminiManager as any).sessionResumptionHandle).toBeNull();
+  });
+});
+
+describe("geminiManager — VAD tuning (input-death regression)", () => {
+  it("never sends prefixPaddingMs — it silently kills speech detection on this model", async () => {
+    await geminiManager.connect();
+    await completeSetup({ instructions: "sys" });
+
+    const aad = lastSetup().realtimeInputConfig.automaticActivityDetection;
+    // Bisected against the live API 2026-07-01: {prefixPaddingMs: 300}
+    // alone → no inputTranscription, user turns never commit (the session
+    // goes deaf). The other three fields are safe and load-bearing.
+    expect(aad.prefixPaddingMs).toBeUndefined();
+    expect(aad).toEqual({
+      startOfSpeechSensitivity: "START_SENSITIVITY_HIGH",
+      endOfSpeechSensitivity: "END_SENSITIVITY_HIGH",
+      silenceDurationMs: 800,
+    });
   });
 });
 
