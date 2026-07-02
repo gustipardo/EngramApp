@@ -205,16 +205,25 @@ const token = await client.authTokens.create({
     uses: 1, // single session
     expireTime, // default ~30 min
     newSessionExpireTime, // window to START a session, ~1 min
-    liveConnectConstraints: {
-      // lock the token to a config
-      model: "gemini-2.5-flash-native-audio-preview-12-2025",
-      config: { responseModalities: ["AUDIO"], sessionResumption: {} },
-    },
-    httpOptions: { apiVersion: "v1alpha" },
+    // NO liveConnectConstraints — see warning below.
   },
 });
 // client: use token.name where the API key would go
 ```
+
+> **WARNING — do NOT set `liveConnectConstraints` (2026-07-01, root cause of
+> the "tutor never advances" release bug).** When the token carries
+> constraints (even model-only), `BidiGenerateContentConstrained` replaces
+> the client's entire `setup` with the token's locked config: `tools`,
+> `systemInstruction`, `inputAudioTranscription` and
+> `outputAudioTranscription` are silently dropped. The model then has no
+> tools (never calls `evaluate_and_move_next`, hallucinates next cards) and
+> the app gets no transcription events (phase machine + BUG 12 UI advance
+> die). Verified against the live API with the app's exact setup payload:
+> constrained token → no toolCall + empty transcripts; unconstrained token →
+> identical behavior to the raw-key path. Engram's setup is dynamic per
+> session (deck prompt), so it must come from the client; the abuse controls
+> are single-use + short expiry + the auth/trial gate in `mintLiveToken`.
 
 This is the natural backend role for the existing single Cloud Function (`functions/src/index.ts`), alongside the trial/subscription check it already does.
 
