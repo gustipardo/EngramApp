@@ -1,7 +1,7 @@
 import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -13,11 +13,6 @@ const TRIAL_MAX_SESSIONS = 10;
 // no longer ships it — it fetches a short-lived ephemeral token from
 // mintLiveToken instead. Set with: firebase functions:secrets:set GEMINI_API_KEY
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
-
-// Must match the model the app opens the Live session with
-// (geminiManager.ts GEMINI_MODEL). The ephemeral token is locked to it so an
-// extracted token can't be repurposed against another model.
-const GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 
 // Play product id → plan label. Mirrors SKU_MAP in src/services/billingService.ts.
 // Duplicated here on purpose: functions is a standalone package and must not
@@ -260,8 +255,20 @@ export const verifyPurchase = onCall(async (request) => {
 // trial or subscription get a token. This makes the broker a second quota
 // wall — even a tampered client can't obtain a token once the trial is spent.
 //
-// The token is locked to our model (liveConnectConstraints) and to a single
-// use, expiring ~30 min out with a ~2 min window to start the session.
+// The token is single-use, expiring ~30 min out with a ~2 min window to
+// start the session.
+//
+// DELIBERATELY NO `liveConnectConstraints`: when the token carries
+// constraints (even model-only), the BidiGenerateContentConstrained
+// endpoint replaces the client's whole `setup` with the token's locked
+// config — silently dropping `tools`, `systemInstruction` and both
+// transcription configs. The tutor then never calls
+// evaluate_and_move_next and the session can't advance (verified against
+// the live API 2026-07-01: constrained token → no toolCall + empty
+// transcripts; unconstrained token → identical behavior to the raw-key
+// path). Our setup is dynamic per session (deck prompt, tools), so it
+// must come from the client. The single-use + short expiry + auth/trial
+// gate remain the abuse controls.
 export const mintLiveToken = onCall(
   { secrets: [GEMINI_API_KEY] },
   async (request) => {
@@ -292,10 +299,9 @@ export const mintLiveToken = onCall(
         uses: 1,
         expireTime: new Date(now + 30 * 60 * 1000).toISOString(),
         newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(),
-        liveConnectConstraints: {
-          model: GEMINI_MODEL,
-          config: { responseModalities: [Modality.AUDIO] },
-        },
+        // NO liveConnectConstraints — see the header comment. A constrained
+        // token makes the server ignore the client's setup (tools, system
+        // prompt, transcriptions), which breaks the entire study loop.
       },
     });
 
