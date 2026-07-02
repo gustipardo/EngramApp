@@ -161,10 +161,12 @@ Server-side VAD decides when the user's turn ends and the model should respond. 
 | `disabled`                 | turn off auto VAD (then send `activityStart`/`activityEnd` manually) | `false`                  |
 | `startOfSpeechSensitivity` | how eagerly speech start is detected                                 | `START_SENSITIVITY_HIGH` |
 | `endOfSpeechSensitivity`   | how eagerly speech end is detected                                   | `END_SENSITIVITY_HIGH`   |
-| `prefixPaddingMs`          | audio kept _before_ detected speech                                  | `300`                    |
+| `prefixPaddingMs`          | audio kept _before_ detected speech                                  | **NOT SENT — see below** |
 | `silenceDurationMs`        | silence before the turn is committed                                 | `800`                    |
 
 **Why Engram tuned it HIGH:** with defaults the model stalled for minutes after the user stopped talking (empty `turnComplete`, no `toolCall`) until a manual pause/resume mute-pulsed the mic. HIGH end-of-speech sensitivity + an 800 ms silence window makes Gemini commit the user turn promptly. (Docs suggest ≥500 ms; 800 ms is our safe value for noisy real-world use.)
+
+> **WARNING — `prefixPaddingMs` must NOT be sent (2026-07-02, part of the BUG 9 root cause).** On `gemini-2.5-flash-native-audio-preview-12-2025`, including `prefixPaddingMs` (we used `300`) silently breaks speech detection: the server stops emitting `inputTranscription` and never commits user turns — the session goes deaf, deterministically. Bisected field-by-field against the live API; the other three fields are safe. A regression test pins the exact block (`geminiManager.sessionResumption.test.ts`).
 
 Manual VAD (if ever needed): set `disabled: true` and frame turns yourself with `realtimeInput.activityStart {}` / `activityEnd {}`.
 
