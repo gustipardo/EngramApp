@@ -19,7 +19,20 @@ Executed from the 2026-07-01 full-project audit (one commit per cluster):
 - [x] PostHog placeholder-key guard; missing analytics events wired (see §7).
 - [x] `pause()`/`resume()` restores the paused-from phase.
 - [x] Dead code removed: `textUtils.ts`, `CardDisplay.tsx`, `commitUiAdvance`, `advancing` phase.
-- [x] Engram rebrand: SKUs → `com.engram.app.{monthly,yearly}`, functions package → `engram-functions`. NOTE: re-run `functions/scripts/seed-test-accounts.js` so the seeded subscriber accounts carry the new productId, and redeploy functions (`firebase deploy --only functions`) to pick up the allow-list.
+- [x] Engram rebrand: SKUs → `com.engram.app.{monthly,yearly}`, functions package → `engram-functions`. ~~NOTE: re-run seed script + redeploy functions~~ — DONE 2026-07-02 (session 20).
+
+---
+
+## Session-flow fixes (2026-07-02) — SHIPPED (local commits, not pushed)
+
+From the "tutor never advances" report (release build, token path). Details: SESSION-FLOW.md BUG 9 + `.claude/context/06-status.md` session 20.
+
+- [x] `mintLiveToken`: drop `liveConnectConstraints` — a constrained token made the server discard the client setup (tools/prompt/transcriptions) → no tool calls, no advance. Deployed + verified on-device.
+- [x] BUG 9 fixed: ctrl-token wedge detection + automatic cold reconnect/resume (`clearSessionResumptionHandle`); nudge and handle-resume proven ineffective against the live API.
+- [x] VAD: `prefixPaddingMs` removed — it silently made sessions deaf (no `inputTranscription`); regression test pins the config.
+- [x] Session-start latency: connect + recordSession + card load run concurrently (~8 s serial → slowest-leg wall time).
+- [ ] Pending on-device: one ≥3-card voice session on the 00:48 build (also confirms the latency win).
+- [ ] Follow-up: error-screen copy is English-only regardless of deck language.
 
 ---
 
