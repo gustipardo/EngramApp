@@ -204,6 +204,25 @@ class SessionManager {
       }
 
       // ── STEP 1 ── Connect WebSocket to Gemini ─────────────────────────────
+      // Latency: the three network/IPC legs of session start are mutually
+      // independent, so they run CONCURRENTLY instead of back-to-back:
+      //   - connect()        (mintLiveToken round-trip + WS open + audio init)
+      //   - recordSession()  (Cloud Function round-trip, ~1–3 s)
+      //   - loadDueCards()   (AnkiDroid ContentProvider, slow on big decks)
+      // Serial, these cost ~8 s before the first card could render
+      // (measured 2026-07-01, Pixel 9 on wifi); concurrent, the wall time
+      // is just the slowest leg. Each result is still awaited at the same
+      // step where it was awaited before, so the bail-out semantics
+      // (trial expired, no cards) are unchanged. A consumed session
+      // increment on a failed connect was already possible in the old
+      // order (connect ok → recordSession ok → later step fails).
+      const recordSessionPromise: Promise<TrialStatus> = recordSession();
+      const loadCardsPromise = loadDueCards(selectedDeck);
+      // Park rejections until their await points so a fast connect()
+      // failure can't turn them into unhandled-rejection crashes.
+      recordSessionPromise.catch(() => {});
+      loadCardsPromise.catch(() => {});
+
       const connectionState = useConnectionStore.getState().connectionState;
       sessionLog.step(1, { deck: selectedDeck, prev_state: connectionState });
       if (connectionState !== "connected") {
@@ -232,7 +251,7 @@ class SessionManager {
       // transient blip doesn't block the session — the next checkTrialStatus
       // from deck-select will re-sync.
       sessionLog.step("1b", { waiting_for: "recordSession" });
-      const trialAfterStart: TrialStatus = await recordSession();
+      const trialAfterStart: TrialStatus = await recordSessionPromise;
       sessionLog.stepDone("1b", {
         subscriptionActive: trialAfterStart.subscriptionActive,
         daysRemaining: trialAfterStart.daysRemaining,
@@ -274,9 +293,10 @@ class SessionManager {
       sessionLog.stepDone(2, { mic: "muted", level_tracker: "started" });
 
       // ── STEP 3 ── Load due cards from AnkiDroid ───────────────────────────
+      // (Kicked off in parallel with connect() at Step 1 — awaited here.)
       sessionLog.step(3, { deck: selectedDeck });
       transitionTo("loading_cards", "startSession");
-      const cards = await loadDueCards(selectedDeck);
+      const cards = await loadCardsPromise;
 
       if (cards.length === 0) {
         sessionLog.stepFail(3, "no cards due for this deck");

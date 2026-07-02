@@ -378,9 +378,12 @@ describe("sessionManager.startSession() — trial quota (Step 1b)", () => {
 
     // We opened the socket for Step 1, so it has to come back down.
     expect(mockDisconnect).toHaveBeenCalled();
-    // We did NOT proceed to set up the audio stack or load cards.
+    // We did NOT proceed to set up the audio stack. (The AnkiDroid due-cards
+    // query MAY have been issued — since the start-latency parallelization
+    // it fires speculatively alongside connect()/recordSession(). It's a
+    // read-only ContentProvider query with no side effects, so a bailed
+    // start discards its result harmlessly.)
     expect(mockSetMicrophoneMuted).not.toHaveBeenCalled();
-    expect(mockNativeGetDueCards).not.toHaveBeenCalled();
     // The phase machine lands on error so the UI can show the right copy.
     expect(useSessionStore.getState().phase).toBe("error");
   });
