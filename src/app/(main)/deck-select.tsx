@@ -147,7 +147,22 @@ export default function DeckSelectScreen() {
         return;
       }
 
-      setDecks(deckInfos);
+      // Sort segment-wise on the `::` hierarchy so every subdeck lands
+      // directly under its parent (plain string sort breaks when a sibling
+      // name sorts between "Parent" and "Parent::Child").
+      const sorted = [...deckInfos].sort((a, b) => {
+        const as = a.deckName.split("::");
+        const bs = b.deckName.split("::");
+        for (let i = 0; i < Math.min(as.length, bs.length); i++) {
+          const cmp = as[i].localeCompare(bs[i], undefined, {
+            sensitivity: "base",
+          });
+          if (cmp !== 0) return cmp;
+        }
+        return as.length - bs.length;
+      });
+
+      setDecks(sorted);
       setLoadingState("loaded");
     } catch (error) {
       console.error("Failed to load decks:", error);
@@ -418,7 +433,13 @@ export default function DeckSelectScreen() {
   // -----------------------------------------------------------------------
   // Deck list
   // -----------------------------------------------------------------------
-  const totalDue = decks.reduce((sum, d) => sum + d.dueCount, 0);
+  // AnkiDroid reports tree-aggregated counts (a parent's counts already
+  // include its subdecks), so total only the top-level decks — summing
+  // every row would double-count nested cards.
+  const totalDue = decks.reduce(
+    (sum, d) => (d.deckName.includes("::") ? sum : sum + d.dueCount),
+    0,
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
@@ -948,6 +969,13 @@ function DeckRow({
   hasInstructions: boolean;
   theme: Theme;
 }) {
+  // Anki deck hierarchy: "Parent::Child" names are subdecks. Render like
+  // AnkiDroid — leaf name only, indented under the parent row. The FULL
+  // name (with ::) stays the identity everywhere else (selection,
+  // settings keys, native queries).
+  const segments = deck.deckName.split("::");
+  const depth = segments.length - 1;
+  const displayName = segments[segments.length - 1];
   // Press feedback for the gear. NativeWind drops Pressable's
   // `({ pressed }) => …` style-callback, so we animate a scale via the
   // native driver on press in/out instead.
@@ -1000,7 +1028,7 @@ function DeckRow({
           flex: 1,
           minWidth: 0,
           paddingVertical: 18,
-          paddingLeft: 20,
+          paddingLeft: 20 + depth * 24,
           flexDirection: "row",
           alignItems: "center",
         }}
@@ -1018,12 +1046,12 @@ function DeckRow({
             style={{
               flexShrink: 1,
               fontSize: 16,
-              fontWeight: "700",
+              fontWeight: depth > 0 ? "600" : "700",
               color: t.text,
             }}
             numberOfLines={1}
           >
-            {deck.deckName}
+            {displayName}
           </Text>
           {hasInstructions && (
             <View
