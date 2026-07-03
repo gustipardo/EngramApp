@@ -620,10 +620,17 @@ export default function DeckSelectScreen() {
         />
       </View>
 
-      {/* Hint text */}
-      <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
+      {/* Hint text. Generous bottom padding: it must clear the Android
+       * gesture bar and rounded screen corners, which crop content flush
+       * with the bottom edge. */}
+      <View style={{ paddingHorizontal: 32, paddingTop: 8, paddingBottom: 36 }}>
         <Text
-          style={{ fontSize: 11, color: t.textDimmed, textAlign: "center" }}
+          style={{
+            fontSize: 12,
+            lineHeight: 17,
+            color: t.textDimmed,
+            textAlign: "center",
+          }}
         >
           Tap the gear to set language, read-back and tutor instructions for
           each deck
