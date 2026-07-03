@@ -7,12 +7,14 @@ import { useTrialStore } from "../../stores/useTrialStore";
 import { AnalyticsEvents } from "../../services/analytics";
 import { light as t } from "../../theme/colors";
 import { EngramWordmark } from "../../components/EngramWordmark";
+import { useT } from "../../i18n";
 
 /** Shown once right after first sign-in: confirms the free trial has started
  *  and continues into the deck the user was trying to open (set in
  *  deck-select.handleSelectDeck before routing to sign-in). */
 export default function TrialStartedScreen() {
   const router = useRouter();
+  const tr = useT();
   const status = useTrialStore((s) => s.status);
   const selectedDeck = useSettingsStore((s) => s.selectedDeck);
 
@@ -84,7 +86,9 @@ export default function TrialStartedScreen() {
           letterSpacing: -0.4,
         }}
       >
-        {subscribed ? "You're all set" : "Your free trial has started"}
+        {subscribed
+          ? tr("onboarding.trialStarted.allSetTitle")
+          : tr("onboarding.trialStarted.trialTitle")}
       </Text>
 
       <Text
@@ -98,8 +102,8 @@ export default function TrialStartedScreen() {
         }}
       >
         {subscribed
-          ? "Your subscription is active. Jump in and start studying by voice."
-          : `You have ${days} day${days === 1 ? "" : "s"} of full access. Study any deck by voice with the AI tutor.`}
+          ? tr("onboarding.trialStarted.allSetBody")
+          : tr("onboarding.trialStarted.trialBody", { count: days })}
       </Text>
 
       <Pressable
@@ -121,7 +125,7 @@ export default function TrialStartedScreen() {
             color: t.text.onAccent,
           }}
         >
-          Start studying
+          {tr("onboarding.trialStarted.startStudying")}
         </Text>
       </Pressable>
     </View>

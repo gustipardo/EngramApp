@@ -14,7 +14,10 @@ import {
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
 import Svg, { Path } from "react-native-svg";
-import { useSettingsStore } from "../../stores/useSettingsStore";
+import {
+  useSettingsStore,
+  type AppLanguage,
+} from "../../stores/useSettingsStore";
 import { useTrialStore } from "../../stores/useTrialStore";
 import { useAuthStore } from "../../stores/useAuthStore";
 import { signOut } from "../../services/authService";
@@ -28,6 +31,7 @@ import { paymentBypassed, authBypassed } from "../../config/env";
 import { derivePlanState } from "../../utils/planState";
 import { appTheme, type Theme } from "../../theme/appTheme";
 import { TERMS_URL, PRIVACY_URL, SUPPORT_EMAIL } from "../../config/links";
+import { useT } from "../../i18n";
 
 // Mirror of the server trial knob (functions/src/index.ts) — used only to
 // draw the "remaining out of total" days meter. If the server number changes,
@@ -38,9 +42,13 @@ const TRIAL_DAYS = 7;
 
 export default function SettingsScreen() {
   const router = useRouter();
+  // `t` is taken by the theme in this file; `tr` = translate.
+  const tr = useT();
 
   const darkMode = useSettingsStore((s) => s.darkMode);
   const toggleDarkMode = useSettingsStore((s) => s.toggleDarkMode);
+  const appLanguage = useSettingsStore((s) => s.appLanguage);
+  const setAppLanguage = useSettingsStore((s) => s.setAppLanguage);
 
   const trialStatus = useTrialStore((s) => s.status);
   const trialError = useTrialStore((s) => s.error);
@@ -108,37 +116,46 @@ export default function SettingsScreen() {
       const restored = await restorePurchases();
       await refreshTrialStatus();
       Alert.alert(
-        restored ? "Purchases restored" : "Nothing to restore",
         restored
-          ? "Your subscription is active on this device."
-          : "We didn't find an active subscription for this account.",
+          ? tr("settings.restoredTitle")
+          : tr("settings.nothingToRestoreTitle"),
+        restored
+          ? tr("settings.restoredBody")
+          : tr("settings.nothingToRestoreBody"),
       );
     } catch (err) {
       console.error("[Settings] restore failed:", err);
-      Alert.alert("Restore failed", "Please try again in a moment.");
+      Alert.alert(
+        tr("settings.restoreFailedTitle"),
+        tr("settings.restoreFailedBody"),
+      );
     } finally {
       setRestoring(false);
     }
   }
 
   function handleSignOut() {
-    Alert.alert("Sign out", "Sign out of your Engram account?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await signOut();
-            // Trial status belongs to the signed-out user — clear it.
-            useTrialStore.setState({ status: null });
-            router.replace("/(onboarding)/sign-in");
-          } catch (err) {
-            console.error("[Settings] sign-out failed:", err);
-          }
+    Alert.alert(
+      tr("settings.signOutConfirmTitle"),
+      tr("settings.signOutConfirmBody"),
+      [
+        { text: tr("common.cancel"), style: "cancel" },
+        {
+          text: tr("settings.signOut"),
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await signOut();
+              // Trial status belongs to the signed-out user — clear it.
+              useTrialStore.setState({ status: null });
+              router.replace("/(onboarding)/sign-in");
+            } catch (err) {
+              console.error("[Settings] sign-out failed:", err);
+            }
+          },
         },
-      },
-    ]);
+      ],
+    );
   }
 
   const openURL = (url: string) =>
@@ -174,7 +191,7 @@ export default function SettingsScreen() {
             borderless: true,
             radius: 22,
           }}
-          accessibilityLabel="Back"
+          accessibilityLabel={tr("settings.backA11y")}
           style={{ padding: 8, borderRadius: 8 }}
         >
           <Svg width={24} height={24} viewBox="0 0 24 24">
@@ -196,7 +213,7 @@ export default function SettingsScreen() {
             color: t.text,
           }}
         >
-          Account
+          {tr("settings.title")}
         </Text>
       </View>
 
@@ -247,7 +264,9 @@ export default function SettingsScreen() {
                 numberOfLines={1}
               >
                 {user?.displayName ??
-                  (isDevBuild ? "Developer" : "Not signed in")}
+                  (isDevBuild
+                    ? tr("settings.developer")
+                    : tr("settings.notSignedIn"))}
               </Text>
               {isDevBuild && (
                 <View
@@ -291,20 +310,21 @@ export default function SettingsScreen() {
         >
           {showSignIn ? (
             <>
-              <PlanLabel color={t.accent}>Free trial</PlanLabel>
+              <PlanLabel color={t.accent}>{tr("settings.freeTrial")}</PlanLabel>
               <Text style={{ fontSize: 14, color: t.text, marginBottom: 14 }}>
-                Sign in to start your 7-day free trial and study with the AI
-                voice tutor.
+                {tr("settings.signInPitch")}
               </Text>
               <PrimaryButton
-                label="Sign in with Google"
+                label={tr("common.signInWithGoogle")}
                 onPress={handleSignIn}
                 t={t}
               />
             </>
           ) : trialError && !trialStatus ? (
             <>
-              <PlanLabel color={t.error}>Couldn’t load your plan</PlanLabel>
+              <PlanLabel color={t.error}>
+                {tr("settings.planLoadFailedTitle")}
+              </PlanLabel>
               <Text
                 style={{
                   fontSize: 14,
@@ -312,11 +332,12 @@ export default function SettingsScreen() {
                   marginBottom: 14,
                 }}
               >
-                We couldn’t reach the server to check your plan. Check your
-                connection and try again.
+                {tr("settings.planLoadFailedBody")}
               </Text>
               <PrimaryButton
-                label={trialChecking ? "Retrying…" : "Retry"}
+                label={
+                  trialChecking ? tr("common.retrying") : tr("common.retry")
+                }
                 onPress={() => {
                   if (!trialChecking) refreshTrialStatus();
                 }}
@@ -360,14 +381,14 @@ export default function SettingsScreen() {
                   color: t.textSecondary,
                 }}
               >
-                Restore purchases
+                {tr("common.restorePurchases")}
               </Text>
             )}
           </Pressable>
         )}
 
         {/* Preferences */}
-        <SectionLabel t={t}>Preferences</SectionLabel>
+        <SectionLabel t={t}>{tr("settings.preferences")}</SectionLabel>
         <View
           style={{
             backgroundColor: t.surface,
@@ -379,8 +400,8 @@ export default function SettingsScreen() {
         >
           <ToggleRow
             testID="toggle-dark"
-            title="Dark mode"
-            subtitle="Use the dark theme across the app"
+            title={tr("settings.darkMode")}
+            subtitle={tr("settings.darkModeHint")}
             value={darkMode}
             onValueChange={() => {
               toggleDarkMode();
@@ -388,10 +409,64 @@ export default function SettingsScreen() {
             }}
             t={t}
           />
+          <Divider t={t} />
+          {/* App-UI language. Independent from the per-deck tutor voice
+           * language (deck-select gear sheet). "Auto" follows the device
+           * locale. Native names on the explicit options — a Spanish
+           * speaker stuck in English must be able to find their language. */}
+          <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: t.text }}>
+              {tr("settings.appLanguage")}
+            </Text>
+            <Text
+              style={{ fontSize: 11, color: t.textSecondary, marginTop: 1 }}
+            >
+              {tr("settings.appLanguageHint")}
+            </Text>
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+              {(
+                [
+                  { value: "system", label: tr("settings.languageSystem") },
+                  { value: "en", label: "English" },
+                  { value: "es", label: "Español" },
+                ] as { value: AppLanguage; label: string }[]
+              ).map((opt) => {
+                const selected = appLanguage === opt.value;
+                return (
+                  <Pressable
+                    key={opt.value}
+                    testID={`lang-${opt.value}`}
+                    onPress={() => {
+                      setAppLanguage(opt.value);
+                      AnalyticsEvents.settingsChanged("app_language", true);
+                    }}
+                    style={{
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: selected ? t.accent : t.border,
+                      backgroundColor: selected ? t.accent : "transparent",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: "600",
+                        color: selected ? t.textOnAccent : t.textSecondary,
+                      }}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
         </View>
 
         {/* About */}
-        <SectionLabel t={t}>About</SectionLabel>
+        <SectionLabel t={t}>{tr("settings.about")}</SectionLabel>
         <View
           style={{
             backgroundColor: t.surface,
@@ -402,26 +477,28 @@ export default function SettingsScreen() {
           }}
         >
           <LinkRow
-            label="Terms of Use"
+            label={tr("common.termsOfUse")}
             onPress={() => openURL(TERMS_URL)}
             t={t}
           />
           <Divider t={t} />
           <LinkRow
-            label="Privacy Policy"
+            label={tr("common.privacyPolicy")}
             onPress={() => openURL(PRIVACY_URL)}
             t={t}
           />
           <Divider t={t} />
           <LinkRow
-            label="Contact support"
+            label={tr("settings.contactSupport")}
             onPress={() => openURL(`mailto:${SUPPORT_EMAIL}`)}
             t={t}
           />
           <Divider t={t} />
           <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
             <Text style={{ fontSize: 13, color: t.textDimmed }}>
-              Version {Constants.expoConfig?.version ?? "1.0.0"}
+              {tr("settings.version", {
+                version: Constants.expoConfig?.version ?? "1.0.0",
+              })}
             </Text>
           </View>
         </View>
@@ -442,7 +519,7 @@ export default function SettingsScreen() {
             }}
           >
             <Text style={{ fontSize: 15, fontWeight: "700", color: t.error }}>
-              Sign out
+              {tr("settings.signOut")}
             </Text>
           </Pressable>
         )}
@@ -469,12 +546,13 @@ function PlanCardBody({
   onManage: () => void;
   t: Theme;
 }) {
+  const tr = useT();
   if (planState === "unknown") {
     return (
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         <ActivityIndicator size="small" color={t.textSecondary} />
         <Text style={{ fontSize: 14, color: t.textSecondary }}>
-          Checking your plan…
+          {tr("settings.checkingPlan")}
         </Text>
       </View>
     );
@@ -483,9 +561,9 @@ function PlanCardBody({
   if (planState === "dev_unlocked") {
     return (
       <>
-        <PlanLabel color={t.info}>Developer access</PlanLabel>
+        <PlanLabel color={t.info}>{tr("settings.devAccess")}</PlanLabel>
         <Text style={{ fontSize: 14, color: t.textSecondary, lineHeight: 20 }}>
-          Billing is bypassed in this build. No real subscription is active.
+          {tr("settings.devAccessBody")}
         </Text>
       </>
     );
@@ -493,11 +571,15 @@ function PlanCardBody({
 
   if (planState === "subscribed") {
     const planLabel =
-      plan === "yearly" ? "Yearly" : plan === "monthly" ? "Monthly" : null;
+      plan === "yearly"
+        ? tr("settings.planYearly")
+        : plan === "monthly"
+          ? tr("settings.planMonthly")
+          : null;
     return (
       <>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <PlanLabel color={t.accent}>Engram Pro</PlanLabel>
+          <PlanLabel color={t.accent}>{tr("settings.engramPro")}</PlanLabel>
           {planLabel && (
             <View
               style={{
@@ -522,9 +604,13 @@ function PlanCardBody({
         <Text
           style={{ fontSize: 14, color: t.textSecondary, marginBottom: 14 }}
         >
-          Active · Managed in Google Play
+          {tr("settings.activeManaged")}
         </Text>
-        <SecondaryButton label="Manage subscription" onPress={onManage} t={t} />
+        <SecondaryButton
+          label={tr("settings.manageSubscription")}
+          onPress={onManage}
+          t={t}
+        />
       </>
     );
   }
@@ -532,13 +618,17 @@ function PlanCardBody({
   if (planState === "trial_expired") {
     return (
       <>
-        <PlanLabel color={t.error}>Trial ended</PlanLabel>
+        <PlanLabel color={t.error}>{tr("settings.trialEnded")}</PlanLabel>
         <Text
           style={{ fontSize: 14, color: t.textSecondary, marginBottom: 14 }}
         >
-          Subscribe to keep studying with the AI voice tutor.
+          {tr("settings.trialEndedBody")}
         </Text>
-        <PrimaryButton label="See plans" onPress={onSubscribe} t={t} />
+        <PrimaryButton
+          label={tr("settings.seePlans")}
+          onPress={onSubscribe}
+          t={t}
+        />
       </>
     );
   }
@@ -546,13 +636,22 @@ function PlanCardBody({
   // trial_active
   return (
     <>
-      <PlanLabel color={t.accent}>Free trial</PlanLabel>
+      <PlanLabel color={t.accent}>{tr("settings.freeTrial")}</PlanLabel>
       <Text style={{ fontSize: 14, color: t.text, marginBottom: 12 }}>
-        {daysRemaining} day{daysRemaining === 1 ? "" : "s"} left
+        {tr("settings.daysLeft", { count: daysRemaining })}
       </Text>
-      <Meter label="Days" remaining={daysRemaining} total={TRIAL_DAYS} t={t} />
+      <Meter
+        label={tr("settings.daysMeterLabel")}
+        remaining={daysRemaining}
+        total={TRIAL_DAYS}
+        t={t}
+      />
       <View style={{ height: 16 }} />
-      <PrimaryButton label="Subscribe" onPress={onSubscribe} t={t} />
+      <PrimaryButton
+        label={tr("common.subscribe")}
+        onPress={onSubscribe}
+        t={t}
+      />
     </>
   );
 }

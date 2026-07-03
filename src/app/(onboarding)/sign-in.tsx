@@ -15,6 +15,7 @@ import { signInWithGoogle } from "../../services/authService";
 import { AnalyticsEvents } from "../../services/analytics";
 import { light as t, palette } from "../../theme/colors";
 import { EngramWordmark } from "../../components/EngramWordmark";
+import { useT } from "../../i18n";
 
 /** Official multi-color Google "G" mark. Brand colors are exact by design
  *  (Google branding guidelines) — not theme tokens. */
@@ -43,6 +44,7 @@ function GoogleG({ size = 20 }: { size?: number }) {
 
 export default function SignInScreen() {
   const router = useRouter();
+  const tr = useT();
   const setOnboardingCompleted = useSettingsStore(
     (s) => s.setOnboardingCompleted,
   );
@@ -78,10 +80,10 @@ export default function SignInScreen() {
         return;
       }
       if (code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-        setError("Google Play Services is unavailable or out of date.");
+        setError(tr("onboarding.signIn.playServicesUnavailable"));
       } else {
         console.error("Sign-in failed:", err);
-        setError("Could not sign in. Check your connection and try again.");
+        setError(tr("onboarding.signIn.failed"));
       }
     } finally {
       setIsSigningIn(false);
@@ -92,12 +94,9 @@ export default function SignInScreen() {
     <View style={styles.screen}>
       <View style={styles.header}>
         <EngramWordmark width={200} style={{ marginBottom: 24 }} />
-        <Text style={styles.tagline}>
-          Study your flashcards with a voice tutor that adapts to how you
-          actually answer.
-        </Text>
+        <Text style={styles.tagline}>{tr("onboarding.signIn.tagline")}</Text>
         <Text style={styles.trialNote}>
-          Sign in to start your 7-day free trial
+          {tr("onboarding.signIn.trialNote")}
         </Text>
       </View>
 
@@ -111,7 +110,7 @@ export default function SignInScreen() {
         onPress={handleGoogleSignIn}
         disabled={isSigningIn}
         accessibilityRole="button"
-        accessibilityLabel="Sign in with Google"
+        accessibilityLabel={tr("common.signInWithGoogle")}
         accessibilityState={{ disabled: isSigningIn, busy: isSigningIn }}
         android_ripple={{ color: palette.navy[200] }}
         style={[
@@ -125,20 +124,22 @@ export default function SignInScreen() {
           <GoogleG size={20} />
         )}
         <Text style={styles.googleButtonText}>
-          {isSigningIn ? "Signing in…" : "Sign in with Google"}
+          {isSigningIn
+            ? tr("onboarding.signIn.signingIn")
+            : tr("common.signInWithGoogle")}
         </Text>
       </Pressable>
 
-      <Text style={styles.legal}>
-        By continuing you agree to our Terms and Privacy Policy.
-      </Text>
+      <Text style={styles.legal}>{tr("onboarding.signIn.legal")}</Text>
 
       {/* Full-screen loading scrim — unmistakable feedback while the Google
           flow + Firebase credential exchange runs. */}
       {isSigningIn && (
         <View style={styles.loadingOverlay} pointerEvents="auto">
           <ActivityIndicator size="large" color={t.accent.default} />
-          <Text style={styles.loadingText}>Signing in…</Text>
+          <Text style={styles.loadingText}>
+            {tr("onboarding.signIn.signingIn")}
+          </Text>
         </View>
       )}
     </View>

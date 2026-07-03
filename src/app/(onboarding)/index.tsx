@@ -11,6 +11,7 @@ import { ankiBridge } from "../../native/ankiBridge";
 import { AnalyticsEvents } from "../../services/analytics";
 import { light as t } from "../../theme/colors";
 import { EngramWordmark } from "../../components/EngramWordmark";
+import { useT } from "../../i18n";
 
 const ANKIDROID_PLAY_STORE_URL =
   "https://play.google.com/store/apps/details?id=com.ichi2.anki";
@@ -19,6 +20,7 @@ type DetectionState = "checking" | "installed" | "not-installed";
 
 export default function AnkiDroidDetectionScreen() {
   const router = useRouter();
+  const tr = useT();
   const [detectionState, setDetectionState] =
     useState<DetectionState>("checking");
 
@@ -54,7 +56,7 @@ export default function AnkiDroidDetectionScreen() {
         />
         <ActivityIndicator size="large" color={t.accent.default} />
         <Text style={{ marginTop: 16, fontSize: 16, color: t.text.secondary }}>
-          Checking for AnkiDroid...
+          {tr("onboarding.detect.checking")}
         </Text>
       </View>
     );
@@ -67,13 +69,10 @@ export default function AnkiDroidDetectionScreen() {
         <View style={[S.statusCircle, { backgroundColor: t.success.subtleBg }]}>
           <Text style={{ fontSize: 44, color: t.success.text }}>✓</Text>
         </View>
-        <Text style={S.title}>AnkiDroid Detected</Text>
-        <Text style={S.body}>
-          Great. AnkiDroid is installed on your device. Set up the connection so
-          you can study your cards with voice.
-        </Text>
+        <Text style={S.title}>{tr("onboarding.detect.detectedTitle")}</Text>
+        <Text style={S.body}>{tr("onboarding.detect.detectedBody")}</Text>
         <Pressable onPress={handleContinue} style={S.primaryBtn}>
-          <Text style={S.primaryBtnText}>Continue</Text>
+          <Text style={S.primaryBtnText}>{tr("common.continue")}</Text>
         </Pressable>
       </View>
     );
@@ -85,19 +84,18 @@ export default function AnkiDroidDetectionScreen() {
       <View style={[S.statusCircle, { backgroundColor: t.accent.subtleBg }]}>
         <Text style={{ fontSize: 36, color: t.accent.default }}>!</Text>
       </View>
-      <Text style={S.title}>AnkiDroid Required</Text>
-      <Text style={S.body}>
-        Engram works on top of AnkiDroid to study your flashcards through voice.
-        Install AnkiDroid first, then come back.
-      </Text>
+      <Text style={S.title}>{tr("onboarding.detect.requiredTitle")}</Text>
+      <Text style={S.body}>{tr("onboarding.detect.requiredBody")}</Text>
       <Pressable
         onPress={handleOpenPlayStore}
         style={[S.primaryBtn, { marginBottom: 12 }]}
       >
-        <Text style={S.primaryBtnText}>Install AnkiDroid</Text>
+        <Text style={S.primaryBtnText}>{tr("onboarding.detect.install")}</Text>
       </Pressable>
       <Pressable onPress={checkAnkiDroidInstallation} style={S.secondaryBtn}>
-        <Text style={S.secondaryBtnText}>I've installed it</Text>
+        <Text style={S.secondaryBtnText}>
+          {tr("onboarding.detect.installed")}
+        </Text>
       </Pressable>
     </View>
   );

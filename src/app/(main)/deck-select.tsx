@@ -32,6 +32,7 @@ import type { DeckInfo } from "../../types/anki";
 import { type Theme, darkTheme, lightTheme } from "../../theme/appTheme";
 import { EngramWordmark } from "../../components/EngramWordmark";
 import { useAutostartEnabled } from "../../services/autostartFlag";
+import { useT } from "../../i18n";
 
 // Tutor-language options shown in the per-deck settings sheet.
 // Keep in sync with `LANGUAGE_LABELS` in `src/config/prompts.ts` (the
@@ -58,6 +59,8 @@ type LoadingState = "loading" | "loaded" | "error" | "empty";
 
 export default function DeckSelectScreen() {
   const router = useRouter();
+  // `t` is taken by the theme in this file; `tr` = translate.
+  const tr = useT();
   const setSelectedDeck = useSettingsStore((s) => s.setSelectedDeck);
   const darkMode = useSettingsStore((s) => s.darkMode);
   const deckReadBack = useSettingsStore((s) => s.deckReadBack);
@@ -277,10 +280,10 @@ export default function DeckSelectScreen() {
             marginTop: 16,
           }}
         >
-          Loading decks...
+          {tr("deckSelect.loadingDecks")}
         </Text>
         <Text style={{ color: t.textSecondary, fontSize: 13, marginTop: 4 }}>
-          Connecting to AnkiDroid
+          {tr("deckSelect.connectingToAnkiDroid")}
         </Text>
       </View>
     );
@@ -325,7 +328,7 @@ export default function DeckSelectScreen() {
             marginBottom: 8,
           }}
         >
-          Cannot Load Decks
+          {tr("deckSelect.cannotLoadTitle")}
         </Text>
         <Text
           style={{
@@ -336,8 +339,7 @@ export default function DeckSelectScreen() {
             marginBottom: 32,
           }}
         >
-          Could not connect to AnkiDroid. Make sure AnkiDroid is installed,
-          running, and permissions are granted.
+          {tr("deckSelect.cannotLoadBody")}
         </Text>
         <Pressable
           onPress={loadDecks}
@@ -351,7 +353,7 @@ export default function DeckSelectScreen() {
           <Text
             style={{ color: t.textOnAccent, fontSize: 15, fontWeight: "700" }}
           >
-            Try Again
+            {tr("common.tryAgain")}
           </Text>
         </Pressable>
       </View>
@@ -397,7 +399,7 @@ export default function DeckSelectScreen() {
             marginBottom: 8,
           }}
         >
-          No Decks Found
+          {tr("deckSelect.noDecksTitle")}
         </Text>
         <Text
           style={{
@@ -408,8 +410,7 @@ export default function DeckSelectScreen() {
             marginBottom: 32,
           }}
         >
-          AnkiDroid does not have any decks yet. Create or import some decks in
-          AnkiDroid, then come back.
+          {tr("deckSelect.noDecksBody")}
         </Text>
         <Pressable
           onPress={handleRefresh}
@@ -423,7 +424,7 @@ export default function DeckSelectScreen() {
           <Text
             style={{ color: t.textOnAccent, fontSize: 15, fontWeight: "700" }}
           >
-            Refresh
+            {tr("common.refresh")}
           </Text>
         </Pressable>
       </View>
@@ -471,7 +472,7 @@ export default function DeckSelectScreen() {
             <Pressable
               onPress={handleSync}
               disabled={syncing}
-              accessibilityLabel="Sync decks with AnkiDroid"
+              accessibilityLabel={tr("deckSelect.syncA11y")}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
@@ -495,7 +496,7 @@ export default function DeckSelectScreen() {
                   fontWeight: "600",
                 }}
               >
-                {syncing ? "Syncing…" : "Sync"}
+                {syncing ? tr("deckSelect.syncing") : tr("deckSelect.sync")}
               </Text>
             </Pressable>
             {/* Account + settings. Replaces the old Dark / Sign Out buttons —
@@ -511,7 +512,7 @@ export default function DeckSelectScreen() {
                 radius: 24,
               }}
               hitSlop={8}
-              accessibilityLabel="Account and settings"
+              accessibilityLabel={tr("deckSelect.accountA11y")}
               style={{
                 width: 36,
                 height: 36,
@@ -530,7 +531,9 @@ export default function DeckSelectScreen() {
           </View>
         </View>
         <Text style={{ fontSize: 13, color: t.textSecondary, marginTop: 6 }}>
-          {totalDue > 0 ? `${totalDue} cards due` : `${decks.length} decks`}
+          {totalDue > 0
+            ? tr("deckSelect.cardsDue", { count: totalDue })
+            : tr("deckSelect.deckCount", { count: decks.length })}
         </Text>
       </View>
 
@@ -562,8 +565,9 @@ export default function DeckSelectScreen() {
                 color: t.trialBannerText,
               }}
             >
-              Free trial: {trialStatus.daysRemaining} day
-              {trialStatus.daysRemaining === 1 ? "" : "s"} remaining
+              {tr("deckSelect.trialBanner", {
+                count: trialStatus.daysRemaining,
+              })}
             </Text>
             <Text
               style={{
@@ -573,7 +577,7 @@ export default function DeckSelectScreen() {
                 color: t.trialBannerText,
               }}
             >
-              Manage ›
+              {tr("deckSelect.manage")}
             </Text>
           </Pressable>
         )}
@@ -614,7 +618,9 @@ export default function DeckSelectScreen() {
           )}
           ListEmptyComponent={
             <View style={{ alignItems: "center", paddingVertical: 32 }}>
-              <Text style={{ color: t.textSecondary }}>No decks available</Text>
+              <Text style={{ color: t.textSecondary }}>
+                {tr("deckSelect.noDecksAvailable")}
+              </Text>
             </View>
           }
         />
@@ -629,9 +635,10 @@ export default function DeckSelectScreen() {
             fontSize: 12,
             lineHeight: 17,
             color: t.textDimmed,
+            textAlign: "center",
           }}
         >
-          Tap the gear to set deck language, read-back and instructions
+          {tr("deckSelect.gearHint")}
         </Text>
       </View>
 
@@ -678,7 +685,7 @@ export default function DeckSelectScreen() {
                   marginBottom: 4,
                 }}
               >
-                Deck Settings
+                {tr("deckSelect.modal.title")}
               </Text>
               <Text
                 style={{
@@ -703,7 +710,7 @@ export default function DeckSelectScreen() {
                     marginBottom: 8,
                   }}
                 >
-                  Tutor language
+                  {tr("deckSelect.modal.tutorLanguage")}
                 </Text>
                 <Text
                   style={{
@@ -712,8 +719,7 @@ export default function DeckSelectScreen() {
                     marginBottom: 10,
                   }}
                 >
-                  Controls the tutor's voice and the language it speaks in. Pick
-                  whatever matches the deck content.
+                  {tr("deckSelect.modal.tutorLanguageHint")}
                 </Text>
                 <View
                   style={{
@@ -774,7 +780,7 @@ export default function DeckSelectScreen() {
                         color: t.text,
                       }}
                     >
-                      Always read answer
+                      {tr("deckSelect.modal.alwaysRead")}
                     </Text>
                     <Text
                       style={{
@@ -783,8 +789,7 @@ export default function DeckSelectScreen() {
                         marginTop: 2,
                       }}
                     >
-                      Read the back of the card aloud after every answer, not
-                      just on incorrect ones.
+                      {tr("deckSelect.modal.alwaysReadHint")}
                     </Text>
                   </View>
                   <Switch
@@ -816,7 +821,7 @@ export default function DeckSelectScreen() {
                     marginBottom: 8,
                   }}
                 >
-                  Tutor instructions
+                  {tr("deckSelect.modal.instructions")}
                 </Text>
                 <Text
                   style={{
@@ -825,8 +830,7 @@ export default function DeckSelectScreen() {
                     marginBottom: 10,
                   }}
                 >
-                  Optional. Free-text guidance the tutor follows for this deck
-                  only.
+                  {tr("deckSelect.modal.instructionsHint")}
                 </Text>
                 <TextInput
                   style={{
@@ -841,7 +845,7 @@ export default function DeckSelectScreen() {
                     textAlignVertical: "top",
                   }}
                   multiline
-                  placeholder="E.g.: The back has a Core Answer and a Conceptual Answer. Only test me on the Core Answer, but read aloud the Conceptual Answer after each card."
+                  placeholder={tr("deckSelect.modal.instructionsPlaceholder")}
                   placeholderTextColor={t.textDimmed}
                   value={settingsModal.instructions}
                   onChangeText={(text) =>
@@ -871,7 +875,7 @@ export default function DeckSelectScreen() {
                       fontSize: 14,
                     }}
                   >
-                    Cancel
+                    {tr("common.cancel")}
                   </Text>
                 </Pressable>
                 <Pressable
@@ -905,7 +909,7 @@ export default function DeckSelectScreen() {
                       fontSize: 14,
                     }}
                   >
-                    Save
+                    {tr("common.save")}
                   </Text>
                 </Pressable>
               </View>
@@ -974,6 +978,7 @@ function DeckRow({
   hasInstructions: boolean;
   theme: Theme;
 }) {
+  const tr = useT();
   // Anki deck hierarchy: "Parent::Child" names are subdecks. Render like
   // AnkiDroid — leaf name only, indented under the parent row. The FULL
   // name (with ::) stays the identity everywhere else (selection,
@@ -1139,7 +1144,9 @@ function DeckRow({
           paddingRight: 20,
           paddingVertical: 18,
         }}
-        accessibilityLabel={`Settings for ${deck.deckName}`}
+        accessibilityLabel={tr("deckSelect.deckSettingsA11y", {
+          deck: deck.deckName,
+        })}
       >
         <Animated.View style={{ transform: [{ scale: gearScale }] }}>
           <GearIcon size={20} color={t.textSecondary} />

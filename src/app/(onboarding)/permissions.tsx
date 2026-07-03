@@ -5,6 +5,7 @@ import { ankiBridge } from "../../native/ankiBridge";
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { AnalyticsEvents } from "../../services/analytics";
 import { light as t } from "../../theme/colors";
+import { useT } from "../../i18n";
 
 type PermissionStatus = "pending" | "granted";
 
@@ -14,6 +15,7 @@ type PermissionStatus = "pending" | "granted";
 // (see sessionManager.startSession). Login is also deferred to deck entry.
 export default function PermissionsScreen() {
   const router = useRouter();
+  const tr = useT();
   const [ankidroid, setAnkidroid] = useState<PermissionStatus>("pending");
   const [isRequesting, setIsRequesting] = useState(false);
   const [needsSettings, setNeedsSettings] = useState(false);
@@ -85,7 +87,7 @@ export default function PermissionsScreen() {
           letterSpacing: -0.4,
         }}
       >
-        Connect AnkiDroid
+        {tr("onboarding.permissions.title")}
       </Text>
 
       <Text
@@ -97,13 +99,12 @@ export default function PermissionsScreen() {
           lineHeight: 22,
         }}
       >
-        Engram reads your flashcard decks straight from AnkiDroid. Grant access
-        to load your decks. You can sign in later, when you start studying.
+        {tr("onboarding.permissions.body")}
       </Text>
 
       <PermissionCard
-        title="AnkiDroid Access"
-        description="Lets Engram read your flashcard decks and due cards from AnkiDroid."
+        title={tr("onboarding.permissions.cardTitle")}
+        description={tr("onboarding.permissions.cardBody")}
         status={ankidroid}
         onRequest={handleRequestAnkiDroidPermission}
         disabled={isRequesting}
@@ -128,7 +129,7 @@ export default function PermissionsScreen() {
               marginBottom: 6,
             }}
           >
-            Permission permanently blocked
+            {tr("onboarding.permissions.blockedTitle")}
           </Text>
           <Text
             style={{
@@ -138,8 +139,7 @@ export default function PermissionsScreen() {
               marginBottom: 12,
             }}
           >
-            Android won't show the dialog anymore. Open Settings → Apps → Engram
-            → Permissions and enable AnkiDroid access manually.
+            {tr("onboarding.permissions.blockedBody")}
           </Text>
           <Pressable
             onPress={() => Linking.openSettings()}
@@ -160,7 +160,7 @@ export default function PermissionsScreen() {
                 color: t.accent.default,
               }}
             >
-              Open Settings
+              {tr("onboarding.permissions.openSettings")}
             </Text>
           </Pressable>
         </View>
@@ -191,7 +191,9 @@ export default function PermissionsScreen() {
               color: granted ? t.text.onAccent : t.text.disabled,
             }}
           >
-            {granted ? "See my decks" : "Grant AnkiDroid access to continue"}
+            {granted
+              ? tr("onboarding.permissions.seeDecks")
+              : tr("onboarding.permissions.grantToContinue")}
           </Text>
         </Pressable>
       </View>
@@ -212,6 +214,7 @@ function PermissionCard({
   onRequest: () => void;
   disabled?: boolean;
 }) {
+  const tr = useT();
   return (
     <View
       style={{
@@ -270,7 +273,7 @@ function PermissionCard({
               color: t.text.onAccent,
             }}
           >
-            Grant {title}
+            {tr("onboarding.permissions.grant", { permission: title })}
           </Text>
         </Pressable>
       )}
@@ -279,10 +282,19 @@ function PermissionCard({
 }
 
 function PermissionBadge({ status }: { status: PermissionStatus }) {
+  const tr = useT();
   const cfg =
     status === "granted"
-      ? { bg: t.success.subtleBg, color: t.success.text, label: "Granted" }
-      : { bg: t.bg.surface3, color: t.text.tertiary, label: "Pending" };
+      ? {
+          bg: t.success.subtleBg,
+          color: t.success.text,
+          label: tr("onboarding.permissions.granted"),
+        }
+      : {
+          bg: t.bg.surface3,
+          color: t.text.tertiary,
+          label: tr("onboarding.permissions.pending"),
+        };
 
   return (
     <View

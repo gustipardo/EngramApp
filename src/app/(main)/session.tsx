@@ -15,6 +15,7 @@ import { useSettingsStore } from "../../stores/useSettingsStore";
 import { useAudioLevelStore } from "../../stores/useAudioLevelStore";
 import { sessionManager } from "../../services/sessionManager";
 import { palette } from "../../theme/colors";
+import { useT, type TFunction } from "../../i18n";
 
 // ---------------------------------------------------------------------------
 // Local theme palette
@@ -210,6 +211,7 @@ function getPhaseIcon(color: string): string {
 // ---------------------------------------------------------------------------
 function ConnectionBadge() {
   const t = useTheme();
+  const tr = useT();
   const connectionState = useConnectionStore((s) => s.connectionState);
   const networkStatus = useConnectionStore((s) => s.networkStatus);
 
@@ -218,17 +220,17 @@ function ConnectionBadge() {
   const isReconnecting = connectionState === "reconnecting";
 
   let dotColor = t.success;
-  let label = "Connected";
+  let label = tr("session.connected");
 
   if (!isOnline) {
     dotColor = t.error;
-    label = "Offline";
+    label = tr("session.offline");
   } else if (isReconnecting) {
     dotColor = t.accent;
-    label = "Reconnecting...";
+    label = tr("session.reconnectingBadge");
   } else if (!isConnected) {
     dotColor = t.textTertiary;
-    label = "Disconnected";
+    label = tr("session.disconnected");
   }
 
   return (
@@ -253,6 +255,7 @@ function ConnectionBadge() {
 // ---------------------------------------------------------------------------
 function AudioLevelMeter() {
   const t = useTheme();
+  const tr = useT();
   const level = useAudioLevelStore((s) => s.level);
   const peakDb = useAudioLevelStore((s) => s.peakDb);
   const chunksReceived = useAudioLevelStore((s) => s.chunksReceived);
@@ -260,10 +263,10 @@ function AudioLevelMeter() {
 
   // Heuristics for the status label (tuned for built-in phone mics).
   // Below -55 dB is essentially silence; above -25 dB is solid speech.
-  let label = "Silent";
-  if (!isListening || chunksReceived === 0) label = "No mic data";
-  else if (peakDb > -25) label = "Audio OK";
-  else if (peakDb > -45) label = "Quiet";
+  let label = tr("session.mic.silent");
+  if (!isListening || chunksReceived === 0) label = tr("session.mic.noData");
+  else if (peakDb > -25) label = tr("session.mic.ok");
+  else if (peakDb > -45) label = tr("session.mic.quiet");
 
   const activeColor = level > 0.05 ? t.success : t.error;
   const dbDisplay = isFinite(peakDb) ? `${peakDb.toFixed(0)} dB` : "—";
@@ -312,6 +315,7 @@ function ProgressHeader({
   stats: { correct: number; incorrect: number };
 }) {
   const t = useTheme();
+  const tr = useT();
   const progress = totalCards > 0 ? (currentIndex / totalCards) * 100 : 0;
 
   return (
@@ -335,7 +339,10 @@ function ProgressHeader({
       {/* Stats row */}
       <View className="flex-row items-center justify-between px-5 py-2.5">
         <Text className="text-xs font-medium" style={{ color: t.textTertiary }}>
-          {currentIndex} / {totalCards} cards
+          {tr("session.cardsProgress", {
+            current: currentIndex,
+            total: totalCards,
+          })}
         </Text>
         <View className="flex-row items-center">
           <View className="flex-row items-center mr-4">
@@ -370,6 +377,7 @@ function ProgressHeader({
 // ---------------------------------------------------------------------------
 function EvaluationBanner() {
   const t = useTheme();
+  const tr = useT();
   const lastEvaluation = useSessionStore((s) => s.lastEvaluation);
   const [visible, setVisible] = useState(false);
   const [displayEval, setDisplayEval] = useState<
@@ -433,7 +441,9 @@ function EvaluationBanner() {
         {isCorrect ? "✓" : "✗"}
       </Text>
       <Text style={{ color: onAccent, fontSize: 16, fontWeight: "700" }}>
-        {isCorrect ? "Correct" : "Incorrect"}
+        {isCorrect
+          ? tr("session.correctBanner")
+          : tr("session.incorrectBanner")}
       </Text>
     </Animated.View>
   );
@@ -444,6 +454,7 @@ function EvaluationBanner() {
 // ---------------------------------------------------------------------------
 export default function SessionScreen() {
   const t = useTheme();
+  const tr = useT();
   const router = useRouter();
   const connectionState = useConnectionStore((s) => s.connectionState);
   const sessionPhase = useSessionStore((s) => s.phase);
@@ -477,7 +488,7 @@ export default function SessionScreen() {
       setError(null);
       await sessionManager.startSession();
     } catch (err: any) {
-      setError(err.message || "Failed to start session");
+      setError(err.message || tr("session.startFailed"));
     }
   }, []);
 
@@ -530,16 +541,16 @@ export default function SessionScreen() {
           style={{ color: t.textPrimary }}
         >
           {sessionPhase === "connecting"
-            ? "Connecting to AI Tutor"
-            : "Loading Cards"}
+            ? tr("session.connectingTitle")
+            : tr("session.loadingCardsTitle")}
         </Text>
         <Text
           className="mt-2 text-center text-sm"
           style={{ color: t.textTertiary }}
         >
           {sessionPhase === "connecting"
-            ? "Setting up your voice session..."
-            : `Fetching cards from ${selectedDeck}...`}
+            ? tr("session.connectingHint")
+            : tr("session.loadingCardsHint", { deck: selectedDeck ?? "" })}
         </Text>
       </View>
     );
@@ -566,13 +577,13 @@ export default function SessionScreen() {
           className="mb-2 text-center text-xl font-bold"
           style={{ color: t.textPrimary }}
         >
-          Something Went Wrong
+          {tr("session.errorTitle")}
         </Text>
         <Text
           className="mb-8 text-center text-base leading-relaxed"
           style={{ color: t.textTertiary }}
         >
-          {error || "An unexpected error occurred. Please try again."}
+          {error || tr("session.errorFallback")}
         </Text>
         <View className="w-full">
           <Pressable
@@ -585,7 +596,7 @@ export default function SessionScreen() {
               className="text-center text-base font-bold"
               style={{ color: t.textOnAccent }}
             >
-              Try Again
+              {tr("common.tryAgain")}
             </Text>
           </Pressable>
           <Pressable
@@ -610,7 +621,7 @@ export default function SessionScreen() {
               className="text-center text-base font-semibold"
               style={{ color: t.textSecondary }}
             >
-              Go Back
+              {tr("common.goBack")}
             </Text>
           </Pressable>
         </View>
@@ -645,7 +656,7 @@ export default function SessionScreen() {
             className="mb-1 text-center text-2xl font-bold"
             style={{ color: t.textPrimary }}
           >
-            Session Complete
+            {tr("session.completeTitle")}
           </Text>
           <Text
             className="mb-8 text-center text-base"
@@ -684,7 +695,7 @@ export default function SessionScreen() {
               className="mt-2 text-sm font-medium"
               style={{ color: t.textTertiary }}
             >
-              Accuracy
+              {tr("session.accuracy")}
             </Text>
           </View>
 
@@ -700,7 +711,7 @@ export default function SessionScreen() {
                 className="text-xs font-medium"
                 style={{ color: t.textTertiary }}
               >
-                Reviewed
+                {tr("session.reviewed")}
               </Text>
             </View>
             <View className="items-center">
@@ -714,7 +725,7 @@ export default function SessionScreen() {
                 className="text-xs font-medium"
                 style={{ color: t.successText }}
               >
-                Correct
+                {tr("session.correct")}
               </Text>
             </View>
             <View className="items-center">
@@ -728,7 +739,7 @@ export default function SessionScreen() {
                 className="text-xs font-medium"
                 style={{ color: t.errorText }}
               >
-                Incorrect
+                {tr("session.incorrect")}
               </Text>
             </View>
           </View>
@@ -746,7 +757,7 @@ export default function SessionScreen() {
               className="text-center text-base font-bold"
               style={{ color: t.textOnAccent }}
             >
-              Done
+              {tr("common.done")}
             </Text>
           </Pressable>
         </View>
@@ -789,15 +800,15 @@ export default function SessionScreen() {
           className="mb-1 text-center text-2xl font-bold"
           style={{ color: t.textPrimary }}
         >
-          {isNetworkLoss ? "Connection Lost" : "Session Paused"}
+          {isNetworkLoss
+            ? tr("session.connectionLostTitle")
+            : tr("session.pausedTitle")}
         </Text>
         <Text
           className="mb-3 text-center text-sm"
           style={{ color: t.textTertiary }}
         >
-          {isNetworkLoss
-            ? "Your network connection was interrupted. The session will resume automatically when the connection is restored."
-            : selectedDeck}
+          {isNetworkLoss ? tr("session.connectionLostBody") : selectedDeck}
         </Text>
 
         {/* Connection badge when network lost */}
@@ -819,7 +830,7 @@ export default function SessionScreen() {
                 className="text-sm font-semibold"
                 style={{ color: t.textSecondary }}
               >
-                {stats.correct} correct
+                {tr("session.correctCount", { count: stats.correct })}
               </Text>
             </View>
             <View className="flex-row items-center">
@@ -831,7 +842,7 @@ export default function SessionScreen() {
                 className="text-sm font-semibold"
                 style={{ color: t.textSecondary }}
               >
-                {stats.incorrect} incorrect
+                {tr("session.incorrectCount", { count: stats.incorrect })}
               </Text>
             </View>
           </View>
@@ -849,7 +860,7 @@ export default function SessionScreen() {
                 className="text-center text-base font-bold"
                 style={{ color: t.textOnAccent }}
               >
-                Resume Session
+                {tr("session.resumeSession")}
               </Text>
             </Pressable>
           )}
@@ -881,7 +892,7 @@ export default function SessionScreen() {
                 color: isNetworkLoss ? t.textSecondary : t.textOnAccent,
               }}
             >
-              End Session
+              {tr("session.endSession")}
             </Text>
           </Pressable>
         </View>
@@ -908,13 +919,13 @@ export default function SessionScreen() {
           className="mb-1 text-center text-xl font-bold"
           style={{ color: t.textPrimary }}
         >
-          Reconnecting...
+          {tr("session.reconnectingTitle")}
         </Text>
         <Text
           className="mb-8 text-center text-sm"
           style={{ color: t.textTertiary }}
         >
-          Attempting to restore your session
+          {tr("session.reconnectingHint")}
         </Text>
         <Pressable
           onPress={handleEndSession}
@@ -930,7 +941,7 @@ export default function SessionScreen() {
             className="text-center text-sm font-semibold"
             style={{ color: t.textSecondary }}
           >
-            Cancel
+            {tr("common.cancel")}
           </Text>
         </Pressable>
       </View>
@@ -940,7 +951,7 @@ export default function SessionScreen() {
   // -------------------------------------------------------------------------
   // Active session UI
   // -------------------------------------------------------------------------
-  const phaseVisual = getPhaseVisual(sessionPhase);
+  const phaseVisual = getPhaseVisual(sessionPhase, tr);
 
   return (
     <View className="flex-1" style={{ backgroundColor: t.bgBase }}>
@@ -1003,7 +1014,7 @@ export default function SessionScreen() {
               className="mb-2 text-xs font-semibold uppercase tracking-widest"
               style={{ color: t.accent }}
             >
-              Question
+              {tr("session.question")}
             </Text>
             <Text
               className="text-xl font-bold leading-relaxed"
@@ -1067,7 +1078,7 @@ export default function SessionScreen() {
               className="text-center text-sm font-bold"
               style={{ color: t.textSecondary }}
             >
-              Pause
+              {tr("session.pause")}
             </Text>
           </Pressable>
           <Pressable
@@ -1080,7 +1091,7 @@ export default function SessionScreen() {
               className="text-center text-sm font-bold"
               style={{ color: t.textOnAccent }}
             >
-              End Session
+              {tr("session.endSession")}
             </Text>
           </Pressable>
         </View>
@@ -1099,39 +1110,43 @@ interface PhaseVisual {
   color: string;
 }
 
-function getPhaseVisual(phase: string): PhaseVisual {
+function getPhaseVisual(phase: string, tr: TFunction): PhaseVisual {
   switch (phase) {
     case "ready":
       return {
-        label: "Getting Ready",
-        hint: "Session is starting...",
+        label: tr("session.phase.readyLabel"),
+        hint: tr("session.phase.readyHint"),
         color: "gray",
       };
     case "asking_question":
       return {
-        label: "Asking Question",
-        hint: "Listen carefully...",
+        label: tr("session.phase.askingLabel"),
+        hint: tr("session.phase.askingHint"),
         color: "blue",
       };
     case "awaiting_answer":
       return {
-        label: "Your Turn",
-        hint: "Speak your answer now",
+        label: tr("session.phase.answerLabel"),
+        hint: tr("session.phase.answerHint"),
         color: "green",
       };
     case "evaluating":
       return {
-        label: "Evaluating",
-        hint: "Checking your answer...",
+        label: tr("session.phase.evaluatingLabel"),
+        hint: tr("session.phase.evaluatingHint"),
         color: "amber",
       };
     case "giving_feedback":
       return {
-        label: "Feedback",
-        hint: "Listen to the feedback",
+        label: tr("session.phase.feedbackLabel"),
+        hint: tr("session.phase.feedbackHint"),
         color: "blue",
       };
     default:
-      return { label: "Studying", hint: "Session in progress", color: "blue" };
+      return {
+        label: tr("session.phase.studyingLabel"),
+        hint: tr("session.phase.studyingHint"),
+        color: "blue",
+      };
   }
 }

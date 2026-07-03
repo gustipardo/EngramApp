@@ -19,9 +19,11 @@ import { AnalyticsEvents } from "../../services/analytics";
 import { light as t } from "../../theme/colors";
 import { requiresPayment } from "../../config/env";
 import { TERMS_URL, PRIVACY_URL } from "../../config/links";
+import { useT } from "../../i18n";
 
 export default function PaywallScreen() {
   const router = useRouter();
+  const tr = useT();
   const refreshTrialStatus = useTrialStore((s) => s.refresh);
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -77,7 +79,7 @@ export default function PaywallScreen() {
         return;
       }
       console.error("Purchase failed:", err);
-      setError(err.message || "Purchase failed. Please try again.");
+      setError(err.message || tr("paywall.purchaseFailed"));
     } finally {
       setPurchasing(false);
     }
@@ -93,22 +95,22 @@ export default function PaywallScreen() {
       if (restored) {
         router.replace("/(main)/deck-select");
       } else {
-        setError("No active subscription found to restore.");
+        setError(tr("paywall.noSubscriptionFound"));
       }
     } catch (err) {
       console.error("Restore failed:", err);
-      setError("Restore failed. Please try again.");
+      setError(tr("paywall.restoreFailed"));
     } finally {
       setRestoring(false);
     }
   }
 
   const monthlyPrice = prices.monthly
-    ? `${prices.monthly}/month`
-    : "$4.99/month";
+    ? tr("paywall.perMonth", { price: prices.monthly })
+    : tr("paywall.monthlyFallback");
   const yearlyPrice = prices.yearly
-    ? `${prices.yearly}/year`
-    : "$39.99/year ($3.33/mo)";
+    ? tr("paywall.perYear", { price: prices.yearly })
+    : tr("paywall.yearlyFallback");
 
   return (
     <View
@@ -130,7 +132,7 @@ export default function PaywallScreen() {
             letterSpacing: -0.4,
           }}
         >
-          Your Free Trial Has Ended
+          {tr("paywall.title")}
         </Text>
         <Text
           style={{
@@ -140,19 +142,19 @@ export default function PaywallScreen() {
             lineHeight: 22,
           }}
         >
-          Subscribe to continue studying with your AI voice tutor
+          {tr("paywall.subtitle")}
         </Text>
       </View>
 
       <PlanOption
-        label="Yearly"
+        label={tr("paywall.yearly")}
         price={yearlyPrice}
-        badge="Save 33%"
+        badge={tr("paywall.saveBadge")}
         selected={selectedPlan === "yearly"}
         onPress={() => setSelectedPlan("yearly")}
       />
       <PlanOption
-        label="Monthly"
+        label={tr("paywall.monthly")}
         price={monthlyPrice}
         selected={selectedPlan === "monthly"}
         onPress={() => setSelectedPlan("monthly")}
@@ -201,7 +203,7 @@ export default function PaywallScreen() {
                 color: t.text.onAccent,
               }}
             >
-              Subscribe
+              {tr("common.subscribe")}
             </Text>
           )}
         </Pressable>
@@ -222,7 +224,7 @@ export default function PaywallScreen() {
               color: t.text.secondary,
             }}
           >
-            Restore purchases
+            {tr("common.restorePurchases")}
           </Text>
         )}
       </Pressable>
@@ -240,7 +242,7 @@ export default function PaywallScreen() {
         <Text
           style={{ textAlign: "center", fontSize: 13, color: t.text.tertiary }}
         >
-          Maybe later
+          {tr("paywall.maybeLater")}
         </Text>
       </Pressable>
 
@@ -255,13 +257,13 @@ export default function PaywallScreen() {
       >
         <Pressable onPress={() => Linking.openURL(TERMS_URL)} hitSlop={8}>
           <Text style={{ fontSize: 12, color: t.text.tertiary }}>
-            Terms of Use
+            {tr("common.termsOfUse")}
           </Text>
         </Pressable>
         <Text style={{ fontSize: 12, color: t.text.tertiary }}> · </Text>
         <Pressable onPress={() => Linking.openURL(PRIVACY_URL)} hitSlop={8}>
           <Text style={{ fontSize: 12, color: t.text.tertiary }}>
-            Privacy Policy
+            {tr("common.privacyPolicy")}
           </Text>
         </Pressable>
       </View>

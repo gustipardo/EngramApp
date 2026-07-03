@@ -2,10 +2,15 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// UI language of the app itself ("system" = follow the device locale).
+// Independent from the per-deck TUTOR language (deckLanguages below).
+export type AppLanguage = "system" | "en" | "es";
+
 export interface SettingsStore {
   selectedDeck: string | null;
   onboardingCompleted: boolean;
   darkMode: boolean;
+  appLanguage: AppLanguage;
   // "Always read the back aloud after every answer", per deck. Decks without
   // an entry fall back to false (read-back on incorrect answers only). Stored
   // per-deck because the right behavior depends on the deck: cloze/recall decks
@@ -20,6 +25,7 @@ export interface SettingsStore {
   deckLanguages: Record<string, string>;
   setSelectedDeck: (deck: string | null) => void;
   setOnboardingCompleted: (completed: boolean) => void;
+  setAppLanguage: (language: AppLanguage) => void;
   setDeckReadBack: (deckName: string, value: boolean) => void;
   toggleDarkMode: () => void;
   setDeckInstructions: (deckName: string, instructions: string) => void;
@@ -34,6 +40,7 @@ export const useSettingsStore = create(
       selectedDeck: null,
       onboardingCompleted: false,
       darkMode: false,
+      appLanguage: "system",
       deckReadBack: {},
       deckInstructions: {},
       deckLanguages: {},
@@ -41,6 +48,7 @@ export const useSettingsStore = create(
       setSelectedDeck: (selectedDeck) => set({ selectedDeck }),
       setOnboardingCompleted: (onboardingCompleted) =>
         set({ onboardingCompleted }),
+      setAppLanguage: (appLanguage) => set({ appLanguage }),
       setDeckReadBack: (deckName, value) =>
         set((state) => {
           // Only persist the non-default (true) state. false → drop the entry
