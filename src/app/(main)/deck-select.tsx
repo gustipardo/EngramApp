@@ -557,23 +557,18 @@ export default function DeckSelectScreen() {
           </Pressable>
         )}
 
-      {/* Deck list */}
-      <View
-        style={{
-          marginHorizontal: 16,
-          marginTop: 12,
-          borderRadius: 12,
-          borderWidth: 1,
-          borderColor: t.border,
-          overflow: "hidden",
-          flex: 1,
-          paddingHorizontal: 12,
-        }}
-      >
+      {/* Deck list — one card per deck (a single wrapper card around the
+       * whole list read as one giant undifferentiated block). */}
+      <View style={{ flex: 1 }}>
         <FlatList
           data={decks}
           keyExtractor={(item) => item.deckName}
-          contentContainerStyle={{ paddingBottom: 16 }}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: 16,
+            gap: 10,
+          }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -581,9 +576,6 @@ export default function DeckSelectScreen() {
               tintColor={t.textSecondary}
             />
           }
-          ItemSeparatorComponent={() => (
-            <View style={{ height: 1, backgroundColor: t.border }} />
-          )}
           renderItem={({ item }) => (
             <DeckRow
               deck={item}
@@ -973,31 +965,30 @@ function DeckRow({
       bounciness: 4,
     }).start();
 
-  // Layout contract (see SESSION-FLOW conventions; mirrored from a
-  // standard mobile list-row pattern):
-  //   - LEADING (left, snug): deck name + (optional) custom-instructions
-  //     dot + counts cluster. These travel together as one tap target.
-  //   - TRAILING (right, pinned): gear icon, sibling Pressable with its
-  //     own touch target. Anchored to the row's right edge via the outer
-  //     wrapper's `justifyContent: 'space-between'`.
+  // Layout contract — each deck is its OWN card (surface + border + radius):
+  //   - LEADING (flex: 1): deck name + (optional) custom-instructions dot.
+  //     Name truncates with `…`; it yields before anything else does.
+  //   - TRAILING (pinned right): counts cluster (fixed-width columns, so
+  //     new/learning/review align vertically across cards) + gear.
   //
-  // Two Pressables as SIBLINGS inside a View — not nested — because on
-  // Android a Pressable inside a Pressable can break out of the parent's
-  // flex row layout and stack vertically. The outer View must claim
-  // `width: '100%'` so `space-between` has a fixed width to distribute
-  // across (otherwise it shrink-wraps to content and there's no slack).
+  // Two Pressables as SIBLINGS inside the card View — not nested — because
+  // on Android a Pressable inside a Pressable can break out of the parent's
+  // flex row layout and stack vertically. The counts live inside the row
+  // Pressable so they're part of the select tap target.
   return (
-    <View
+    <Animated.View
       style={{
-        width: "100%",
+        backgroundColor: t.surface,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: t.border,
+        overflow: "hidden",
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "space-between",
+        transform: [{ scale: rowScale }],
       }}
     >
-      {/* Leading group — deck name + counts together. flexShrink so the
-       * name can truncate with `…` on narrow rows rather than overflow
-       * onto a second line. */}
+      {/* Leading group — deck name (+ counts pinned to its right edge). */}
       <Pressable
         onPress={onPress}
         onLongPress={onLongPress}
@@ -1005,109 +996,99 @@ function DeckRow({
         onPressOut={() => pressRow(1)}
         android_ripple={{ color: t.pressHighlight }}
         style={{
-          flexShrink: 1,
+          flex: 1,
           minWidth: 0,
-          paddingVertical: 14,
-          paddingLeft: 8,
-          paddingRight: 8,
+          paddingVertical: 16,
+          paddingLeft: 16,
           flexDirection: "row",
           alignItems: "center",
         }}
       >
-        <Animated.View
+        <View
           style={{
-            flexShrink: 1,
+            flex: 1,
             minWidth: 0,
             flexDirection: "row",
             alignItems: "center",
-            transform: [{ scale: rowScale }],
+            gap: 6,
           }}
         >
-          <View
+          <Text
             style={{
               flexShrink: 1,
-              minWidth: 0,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
+              fontSize: 16,
+              fontWeight: "700",
+              color: t.text,
             }}
+            numberOfLines={1}
           >
-            <Text
+            {deck.deckName}
+          </Text>
+          {hasInstructions && (
+            <View
               style={{
-                flexShrink: 1,
-                fontSize: 16,
-                fontWeight: "700",
-                color: t.text,
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: t.accent,
+                flexShrink: 0,
               }}
-              numberOfLines={1}
-            >
-              {deck.deckName}
-            </Text>
-            {hasInstructions && (
-              <View
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 4,
-                  backgroundColor: t.accent,
-                  flexShrink: 0,
-                }}
-              />
-            )}
-          </View>
-          {/* Counts cluster (new / learning / review). Sits snug to the
-           * right of the deck name so the whole leading group reads as
-           * one logical block. `flexShrink: 0` — numbers never collapse;
-           * the name yields first. */}
-          <View
+            />
+          )}
+        </View>
+        {/* Counts cluster (new / learning / review). Pinned to the card's
+         * right edge (before the gear) with fixed-width columns so the
+         * numbers line up vertically across cards. `flexShrink: 0` —
+         * numbers never collapse; the name yields first. */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            flexShrink: 0,
+            marginLeft: 12,
+          }}
+        >
+          <Text
             style={{
-              flexDirection: "row",
-              alignItems: "center",
-              flexShrink: 0,
-              marginLeft: 12,
+              minWidth: 28,
+              textAlign: "right",
+              fontSize: 13,
+              fontWeight: "600",
+              fontVariant: ["tabular-nums"],
+              color: deck.newCount > 0 ? t.info : t.textDimmed,
             }}
           >
-            <Text
-              style={{
-                minWidth: 28,
-                textAlign: "right",
-                fontSize: 13,
-                fontWeight: "600",
-                color: deck.newCount > 0 ? t.info : t.textDimmed,
-              }}
-            >
-              {deck.newCount}
-            </Text>
-            <Text
-              style={{
-                minWidth: 28,
-                textAlign: "right",
-                fontSize: 13,
-                fontWeight: "600",
-                marginLeft: 6,
-                color: deck.learnCount > 0 ? t.error : t.textDimmed,
-              }}
-            >
-              {deck.learnCount}
-            </Text>
-            <Text
-              style={{
-                minWidth: 28,
-                textAlign: "right",
-                fontSize: 13,
-                fontWeight: "600",
-                marginLeft: 6,
-                color: deck.reviewCount > 0 ? t.success : t.textDimmed,
-              }}
-            >
-              {deck.reviewCount}
-            </Text>
-          </View>
-        </Animated.View>
+            {deck.newCount}
+          </Text>
+          <Text
+            style={{
+              minWidth: 28,
+              textAlign: "right",
+              fontSize: 13,
+              fontWeight: "600",
+              marginLeft: 6,
+              fontVariant: ["tabular-nums"],
+              color: deck.learnCount > 0 ? t.error : t.textDimmed,
+            }}
+          >
+            {deck.learnCount}
+          </Text>
+          <Text
+            style={{
+              minWidth: 28,
+              textAlign: "right",
+              fontSize: 13,
+              fontWeight: "600",
+              marginLeft: 6,
+              fontVariant: ["tabular-nums"],
+              color: deck.reviewCount > 0 ? t.success : t.textDimmed,
+            }}
+          >
+            {deck.reviewCount}
+          </Text>
+        </View>
       </Pressable>
-      {/* Trailing — gear pinned at the row's right edge. `space-between`
-       * on the outer wrapper pushes this sibling all the way right
-       * regardless of how wide the leading group is. */}
+      {/* Trailing — gear pinned at the card's right edge. */}
       <Pressable
         onPress={onSettings}
         onPressIn={() => pressGear(0.92)}
@@ -1120,10 +1101,9 @@ function DeckRow({
         }}
         style={{
           flexShrink: 0,
-          marginRight: 4,
-          paddingHorizontal: 8,
-          paddingVertical: 14,
-          borderRadius: 8,
+          paddingLeft: 10,
+          paddingRight: 14,
+          paddingVertical: 16,
         }}
         accessibilityLabel={`Settings for ${deck.deckName}`}
       >
@@ -1131,6 +1111,6 @@ function DeckRow({
           <GearIcon size={20} color={t.textSecondary} />
         </Animated.View>
       </Pressable>
-    </View>
+    </Animated.View>
   );
 }
