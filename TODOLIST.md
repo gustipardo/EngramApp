@@ -23,7 +23,18 @@ Executed from the 2026-07-01 full-project audit (one commit per cluster):
 
 ---
 
-## Session-flow fixes (2026-07-02) — SHIPPED (local commits, not pushed)
+## App-UI i18n (2026-07-03) — SHIPPED (pushed)
+
+Full EN/ES localization (`src/i18n/`, commits `86b8f8d` + `98abc26`). Device-locale default + Account language picker. Details: root `.claude/context/06-status.md` session 21.
+
+- [x] All 8 screens extracted to the catalog; `es.ts` mirror type-enforced; verified live on Pixel 9.
+- [ ] Rebuild the **release** APK — expo-localization is a native module; the current release build predates it.
+- [ ] Tutor-language option names in the deck sheet (`English (US)`, `Spanish`, …) still English-only.
+- [ ] Play Store listing in Spanish once created (see P1 listing prep).
+
+---
+
+## Session-flow fixes (2026-07-02) — SHIPPED (pushed 2026-07-03)
 
 From the "tutor never advances" report (release build, token path). Details: SESSION-FLOW.md BUG 9 + `.claude/context/06-status.md` session 20.
 

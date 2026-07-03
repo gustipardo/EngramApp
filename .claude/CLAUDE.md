@@ -86,7 +86,7 @@ npx jest --testPathPattern="useSessionStore"
 
 - **`useSessionStore`** — Session phase state machine (`SessionPhase` in `src/types/session.ts`): `idle | loading_cards | connecting | ready | asking_question | awaiting_answer | evaluating | giving_feedback | session_complete | paused | reconnecting | error`. Stats, `totalDueAtStart` snapshot. `transitionTo` does NOT validate transitions — callers guard.
 - **`useConnectionStore`** — Connection state (`idle|connecting|connected|reconnecting|failed|dropped`), reconnect attempt counter.
-- **`useSettingsStore`** — Persisted via AsyncStorage: `selectedDeck`, `onboardingCompleted`, `darkMode`, per-deck `deckReadBack` / `deckInstructions` / `deckLanguages`.
+- **`useSettingsStore`** — Persisted via AsyncStorage: `selectedDeck`, `onboardingCompleted`, `darkMode`, `appLanguage` (UI language: `system | en | es`), per-deck `deckReadBack` / `deckInstructions` / `deckLanguages`.
 - **`useCardCacheStore`** — In-memory: cached cards array, data pointer `currentIndex` (advances eagerly) + UI pointer `uiVisibleIndex` (lags during the feedback turn, BUG 12).
 - **`useTrialStore`** — Server trial/subscription status + `refresh()` + error flag.
 - **`useAuthStore`** — Firebase auth state (`onAuthStateChanged`); dev bypass resolves synchronously.
@@ -101,6 +101,16 @@ npx jest --testPathPattern="useSessionStore"
 ### Utils (`src/utils/`)
 
 - `planState.ts` — derives the single user-facing plan state (`dev_unlocked | subscribed | trial_active | trial_expired | unknown`) for settings/paywall/deck-select.
+
+### i18n (`src/i18n/`)
+
+App-UI localization (EN/ES) via `i18n-js` + `expo-localization`. **Separate concern from the per-deck TUTOR voice language** (that one is steered through the system prompt — `prompts.ts` / `deckLanguages`).
+
+- `en.ts` — source catalog, keys grouped per screen. `es.ts` mirrors it key-for-key, enforced at compile time by the `Translations` type — adding a string to `en.ts` without its Spanish twin is a `tsc` error.
+- `index.ts` — `useT()` hook (subscribes to the persisted `appLanguage` setting, so switching re-renders live) + non-hook `t()` for code outside the React tree. Resolution: Account override → device locale → English.
+- Convention: screens that already bind `t` to the theme use `tr` for the translate function.
+- Spanish copy uses voseo (same tone as the landing's `Web/src/i18n/es.json`).
+- `expo-localization` is a **native module** — a JS-only reload on a pre-i18n build crashes; rebuild the APK.
 
 ### Config (`src/config/`)
 
