@@ -43,7 +43,7 @@ class AudioFocusManager(
 
       if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        routeToConnectedBluetoothDevice()
+        applyPreferredRoute()
         registerAudioDeviceCallback()
       }
 
@@ -62,7 +62,7 @@ class AudioFocusManager(
 
   fun abandonFocus() {
     unregisterAudioDeviceCallback()
-    clearBluetoothRoute()
+    clearForcedRoute()
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
@@ -108,46 +108,70 @@ class AudioFocusManager(
         device.type == AudioDeviceInfo.TYPE_BLE_HEADSET)
   }
 
+  private fun isWiredHeadset(device: AudioDeviceInfo): Boolean {
+    return device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+      device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+      device.type == AudioDeviceInfo.TYPE_USB_HEADSET
+  }
+
   /**
-   * Check if a Bluetooth audio device is already connected and route to it.
-   * Called when audio focus is first acquired.
+   * Pick the output route for the session: Bluetooth > wired headset >
+   * built-in speaker. MODE_IN_COMMUNICATION defaults to the EARPIECE when
+   * nothing external is attached (quiet, ear-only "phone call" routing), so
+   * the speaker must be forced explicitly for hands-free use.
+   * Called when focus is first acquired and whenever devices change.
    */
-  private fun routeToConnectedBluetoothDevice() {
+  private fun applyPreferredRoute() {
     val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-    for (device in devices) {
-      if (isBluetoothDevice(device)) {
-        Log.d(TAG, "Found connected Bluetooth device: ${device.productName}, type=${device.type}")
-        routeToBluetoothDevice(device)
+    devices.firstOrNull { isBluetoothDevice(it) }?.let {
+      Log.d(TAG, "Routing to Bluetooth device: ${it.productName}, type=${it.type}")
+      routeToBluetoothDevice(it)
+      return
+    }
+    if (devices.any { isWiredHeadset(it) }) {
+      Log.d(TAG, "Wired headset present — leaving default route")
+      clearForcedRoute()
+      return
+    }
+    routeToSpeaker()
+  }
+
+  private fun routeToSpeaker() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      val speaker = audioManager.availableCommunicationDevices
+        .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+      if (speaker != null) {
+        val success = audioManager.setCommunicationDevice(speaker)
+        Log.d(TAG, "setCommunicationDevice(speaker): $success")
         return
       }
     }
+    @Suppress("DEPRECATION")
+    audioManager.isSpeakerphoneOn = true
+    Log.d(TAG, "Forced speakerphone on (legacy)")
   }
 
   /**
    * Register a callback to detect audio device additions/removals mid-session.
-   * When Bluetooth headphones connect, audio is automatically routed to them.
+   * Re-evaluates the preferred route on every change (e.g. Bluetooth
+   * headphones connect → route to them; disconnect → back to speaker).
    */
   private fun registerAudioDeviceCallback() {
     if (deviceCallback != null) return
 
     deviceCallback = object : AudioDeviceCallback() {
       override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
-        for (device in addedDevices) {
-          if (isBluetoothDevice(device)) {
-            Log.d(TAG, "Bluetooth device connected: ${device.productName}, type=${device.type}")
-            routeToBluetoothDevice(device)
-            return
-          }
+        if (addedDevices.any { isBluetoothDevice(it) || isWiredHeadset(it) }) {
+          Log.d(TAG, "Headset device connected — re-routing")
+          applyPreferredRoute()
         }
       }
 
       override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
-        for (device in removedDevices) {
-          if (isBluetoothDevice(device)) {
-            Log.d(TAG, "Bluetooth device disconnected: ${device.productName}")
-            clearBluetoothRoute()
-            return
-          }
+        if (removedDevices.any { isBluetoothDevice(it) || isWiredHeadset(it) }) {
+          Log.d(TAG, "Headset device disconnected — re-routing")
+          clearForcedRoute()
+          applyPreferredRoute()
         }
       }
     }
@@ -179,11 +203,13 @@ class AudioFocusManager(
     }
   }
 
-  private fun clearBluetoothRoute() {
+  private fun clearForcedRoute() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       audioManager.clearCommunicationDevice()
       Log.d(TAG, "Cleared communication device")
     } else {
+      @Suppress("DEPRECATION")
+      audioManager.isSpeakerphoneOn = false
       @Suppress("DEPRECATION")
       if (audioManager.isBluetoothScoOn) {
         audioManager.isBluetoothScoOn = false
