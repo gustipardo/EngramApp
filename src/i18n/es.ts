@@ -48,8 +48,7 @@ export const es: Translations = {
     },
     manage: "Administrar ›",
     noDecksAvailable: "No hay mazos disponibles",
-    gearHint:
-      "Tocá el engranaje para configurar idioma, lectura e instrucciones del mazo",
+    gearHint: "Tocá el engranaje: idioma, lectura e instrucciones del mazo",
     syncA11y: "Sincronizar mazos con AnkiDroid",
     accountA11y: "Cuenta y configuración",
     deckSettingsA11y: "Configuración de %{deck}",
