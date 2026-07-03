@@ -557,18 +557,14 @@ export default function DeckSelectScreen() {
           </Pressable>
         )}
 
-      {/* Deck list — one card per deck (a single wrapper card around the
-       * whole list read as one giant undifferentiated block). */}
+      {/* Deck list — flat, AnkiDroid-style: full-width rows with a thin
+       * separator line between decks. Decks are the whole point of this
+       * screen; no card chrome competing with them. */}
       <View style={{ flex: 1 }}>
         <FlatList
           data={decks}
           keyExtractor={(item) => item.deckName}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 12,
-            paddingBottom: 16,
-            gap: 10,
-          }}
+          contentContainerStyle={{ paddingTop: 4, paddingBottom: 16 }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -576,6 +572,15 @@ export default function DeckSelectScreen() {
               tintColor={t.textSecondary}
             />
           }
+          ItemSeparatorComponent={() => (
+            <View
+              style={{
+                height: 1,
+                backgroundColor: t.border,
+                marginHorizontal: 20,
+              }}
+            />
+          )}
           renderItem={({ item }) => (
             <DeckRow
               deck={item}
@@ -965,24 +970,20 @@ function DeckRow({
       bounciness: 4,
     }).start();
 
-  // Layout contract — each deck is its OWN card (surface + border + radius):
+  // Layout contract — flat AnkiDroid-style row (no card chrome; a thin
+  // separator between rows comes from the list's ItemSeparatorComponent):
   //   - LEADING (flex: 1): deck name + (optional) custom-instructions dot.
   //     Name truncates with `…`; it yields before anything else does.
   //   - TRAILING (pinned right): counts cluster (fixed-width columns, so
-  //     new/learning/review align vertically across cards) + gear.
+  //     new/learning/review align vertically across rows) + gear.
   //
-  // Two Pressables as SIBLINGS inside the card View — not nested — because
+  // Two Pressables as SIBLINGS inside the row View — not nested — because
   // on Android a Pressable inside a Pressable can break out of the parent's
   // flex row layout and stack vertically. The counts live inside the row
   // Pressable so they're part of the select tap target.
   return (
     <Animated.View
       style={{
-        backgroundColor: t.surface,
-        borderRadius: 14,
-        borderWidth: 1,
-        borderColor: t.border,
-        overflow: "hidden",
         flexDirection: "row",
         alignItems: "center",
         transform: [{ scale: rowScale }],
@@ -998,8 +999,8 @@ function DeckRow({
         style={{
           flex: 1,
           minWidth: 0,
-          paddingVertical: 16,
-          paddingLeft: 16,
+          paddingVertical: 18,
+          paddingLeft: 20,
           flexDirection: "row",
           alignItems: "center",
         }}
@@ -1088,7 +1089,7 @@ function DeckRow({
           </Text>
         </View>
       </Pressable>
-      {/* Trailing — gear pinned at the card's right edge. */}
+      {/* Trailing — gear pinned at the row's right edge. */}
       <Pressable
         onPress={onSettings}
         onPressIn={() => pressGear(0.92)}
@@ -1101,9 +1102,9 @@ function DeckRow({
         }}
         style={{
           flexShrink: 0,
-          paddingLeft: 10,
-          paddingRight: 14,
-          paddingVertical: 16,
+          paddingLeft: 12,
+          paddingRight: 20,
+          paddingVertical: 18,
         }}
         accessibilityLabel={`Settings for ${deck.deckName}`}
       >
