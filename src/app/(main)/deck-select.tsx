@@ -631,8 +631,7 @@ export default function DeckSelectScreen() {
             color: t.textDimmed,
           }}
         >
-          Tap the gear to set language, read-back and tutor instructions for
-          each deck
+          Tap the gear to set deck language, read-back and instructions
         </Text>
       </View>
 
