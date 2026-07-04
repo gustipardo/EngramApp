@@ -1202,7 +1202,11 @@ class SessionManager {
           (d) => d.deckName === deckForAnswer,
         );
         if (info) {
-          schedulerRemaining = info.newCount + info.learnCount + info.dueCount;
+          // The module's dueCount is ALREADY the deck total
+          // (new + learn + review, see AnkiDroidModule.getDeckInfo) —
+          // summing the parts on top of it double-counted (8-card deck
+          // reported remaining: 16, autopilot run 20260704-164104).
+          schedulerRemaining = info.dueCount;
         }
       } catch (err) {
         sessionLog.warn("AnkiDroid", "getDeckInfo for remaining failed", {

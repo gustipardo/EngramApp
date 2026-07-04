@@ -365,12 +365,14 @@ describe("sessionManager — evaluate_and_move_next dispatch", () => {
       totalDueAtStart: 8,
       stats: { correct: 3, incorrect: 6 },
     });
+    // NB: the anki-droid module's dueCount is the deck TOTAL
+    // (new + learn + review), not the review-due bucket.
     mockGetDeckInfo.mockResolvedValueOnce([
       {
         deckName: "Aws Exam SA",
         newCount: 2,
         learnCount: 3,
-        dueCount: 0,
+        dueCount: 5,
         reviewCount: 0,
       },
     ]);
