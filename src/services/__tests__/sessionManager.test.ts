@@ -349,11 +349,13 @@ describe("sessionManager — evaluate_and_move_next dispatch", () => {
     });
 
     const result = mockSendToolResult.mock.calls[0][1];
-    // 200 due at start − 1 just-answered = 199 remaining
-    expect(result.remaining_cards).toBe(199);
+    // 200 due at start − 1 just-answered = 199, +1 for the attached
+    // next_card (remaining_cards must stay coherent with next_card —
+    // autopilot 21, 2026-07-03).
+    expect(result.remaining_cards).toBe(200);
   });
 
-  it("clamps remaining_cards at 0 if the user keeps studying past the snapshot", async () => {
+  it("keeps remaining_cards coherent with next_card past the snapshot (re-served ease-1 card)", async () => {
     useSessionStore.setState({
       totalDueAtStart: 1,
       stats: { correct: 2, incorrect: 0 },
@@ -365,7 +367,12 @@ describe("sessionManager — evaluate_and_move_next dispatch", () => {
     });
 
     const result = mockSendToolResult.mock.calls[0][1];
-    expect(result.remaining_cards).toBe(0);
+    // The snapshot term clamps at 0, but a next_card is attached (the
+    // cache still holds one — e.g. a re-served ease-1 card), so the
+    // model must not see the contradicting pair {remaining: 0,
+    // next_card ≠ null} that made it wrap up without end_session.
+    expect(result.remaining_cards).toBe(1);
+    expect(result.next_card).not.toBeNull();
   });
 
   // Same BUG 10 family as remaining_cards: the foreground notification's
@@ -738,7 +745,9 @@ describe("sessionManager — end_session tool delayed completion (ghost timer)",
     useSessionStore.getState().transitionTo("giving_feedback", "test");
 
     await (sessionManager as any).handleEndSessionTool("call-3");
-    useSessionStore.getState().transitionTo("session_complete", "no_more_cards");
+    useSessionStore
+      .getState()
+      .transitionTo("session_complete", "no_more_cards");
 
     await jest.advanceTimersByTimeAsync(6000);
 
@@ -766,9 +775,7 @@ describe("sessionManager — slow answer+refill must not falsely end the session
       () => new Promise((r) => setTimeout(() => r(true), 800)),
     );
     mockPeekNextCard.mockReset();
-    mockPeekNextCard
-      .mockReturnValueOnce(undefined)
-      .mockReturnValue(NEXT_CARD);
+    mockPeekNextCard.mockReturnValueOnce(undefined).mockReturnValue(NEXT_CARD);
 
     const call = (sessionManager as any).handleEvaluateAndMoveNext("call_g1", {
       user_response_quality: "correct",

@@ -956,6 +956,14 @@ class SessionManager {
       await webrtcManager.updateSession({
         turn_detection: { type: "server_vad" },
       });
+
+      // Unmute the mic after VAD is re-armed. The connection-drop handler
+      // mutes (see handleConnectionDrop, line ~834) and the user-facing
+      // resume() unmutes (line ~1653), but this resume path never did —
+      // every answer after an auto-reconnect was silently dropped
+      // (autopilot session 21, 2026-07-03). Mirrors STEP 7 unmute.
+      webrtcManager.setMicrophoneMuted(false);
+      sessionLog.info("SessionManager", "mic unmuted after reconnect resume");
     }
 
     // 5. Transition back to active phase
@@ -1135,7 +1143,18 @@ class SessionManager {
     // better than a hard "1" that contradicts a 200-card deck.
     const { totalDueAtStart } = useSessionStore.getState();
     const answered = stats.correct + stats.incorrect;
-    const remainingCards = Math.max(0, totalDueAtStart - answered);
+    // `remaining_cards` must be coherent with `next_card`. Under the
+    // refill-from-scheduler architecture, an ease-1 card re-served into
+    // the lookahead extends the session past `totalDueAtStart - answered`.
+    // Reporting `0` here while handing the model a next_card caused it to
+    // speak the wrap-up line and skip end_session (orphan session, no
+    // tool result triggered the WS to close gracefully, autopilot 21).
+    //
+    // Bump by +1 to account for the next_card we are about to attach so
+    // the model never gets a contradicting pair. Does not promise more
+    // turns than the cache can deliver, but prevents the contradiction.
+    const remainingCards =
+      Math.max(0, totalDueAtStart - answered) + (nextCard ? 1 : 0);
 
     // Guard against the 500 ms race falsely ending the session: if the
     // answer+refill chain lost the race (slow AnkiDroid), peekNextCard()
