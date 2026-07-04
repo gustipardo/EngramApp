@@ -39,6 +39,7 @@ import { sessionLog } from "./sessionDebugLogger";
 import { sfxPlayer } from "./sfxPlayer";
 import { transcriptIndicatesNextCard } from "./uiAdvanceMatcher";
 import { useCardCacheStore } from "../stores/useCardCacheStore";
+import { useAudioLevelStore } from "../stores/useAudioLevelStore";
 import { recordSession, type TrialStatus } from "./trialService";
 
 /**
@@ -104,6 +105,25 @@ class SessionManager {
    */
   private awaitingToolCallForAnswer = false;
   private noToolCallTurns = 0;
+  /**
+   * Deaf-session detector (autopilot run 20260704-165928): after a double
+   * reconnect the session went fully deaf — the local mic pipeline was alive
+   * (VU meter moving, chunks flowing) but Gemini emitted zero input events
+   * for clearly-audible answers. Detector: sustained speech-level audio while
+   * we're in `awaiting_answer` that produces NO Gemini input event
+   * (speech_started / input transcription) within the verdict window counts a
+   * strike; 2 strikes trigger the cold recovery (fresh WS, no resumption
+   * handle, app-level resume) that empirically fixes deaf sessions.
+   */
+  private deafDetectorUnsub: (() => void) | null = null;
+  private deafSpeechStartAt: number | null = null;
+  private deafCheckTimer: ReturnType<typeof setTimeout> | null = null;
+  private deafStrikes = 0;
+  private lastGeminiInputAt = 0;
+  private static readonly DEAF_SPEECH_DB = -30;
+  private static readonly DEAF_SILENCE_DB = -45;
+  private static readonly DEAF_SUSTAIN_MS = 1500;
+  private static readonly DEAF_VERDICT_MS = 6000;
   private wedgeRecoveryInFlight = false;
   private static readonly CTRL_TOKEN_RE = /<ctrl\d+>/;
 
@@ -574,6 +594,8 @@ class SessionManager {
   private registerEventHandlers(): void {
     const { transitionTo } = useSessionStore.getState();
 
+    this.armDeafDetector();
+
     // Handle tool calls
     webrtcManager.on(
       "response.function_call_arguments.done",
@@ -645,6 +667,7 @@ class SessionManager {
 
     // Handle user speaking (logging only — debounce cancel is below).
     webrtcManager.on("input_audio_buffer.speech_started", () => {
+      this.noteGeminiInputEvent();
       const phase = useSessionStore.getState().phase;
       if (phase === "awaiting_answer") {
         sessionLog.event("mic", "user speech started");
@@ -706,6 +729,7 @@ class SessionManager {
     webrtcManager.on(
       "conversation.item.input_audio_transcription.completed",
       (event: any) => {
+        this.noteGeminiInputEvent();
         sessionLog.event("user", "transcript", { text: event.transcript });
         const phase = useSessionStore.getState().phase;
         if (phase !== "awaiting_answer") return;
@@ -997,8 +1021,16 @@ class SessionManager {
       sessionLog.info("SessionManager", "mic unmuted after reconnect resume");
     }
 
-    // 5. Transition back to active phase
-    const restorePhase = this.phaseBeforeNetworkPause || "awaiting_answer";
+    // 5. Transition back to an ANSWERABLE phase. The resume message always
+    // ends with the model re-asking the current card, so post-resume it is
+    // the user's turn — restoring the paused-from phase verbatim is wrong
+    // for `evaluating` (the in-flight answer died with the connection;
+    // nothing will ever advance the phase and the UI sits on
+    // "Checking your answer…" forever — autopilot run 20260704-165928) and
+    // pointless for `giving_feedback` (that turn is gone too). Only a
+    // user-initiated `paused` survives the mapping.
+    const restorePhase =
+      this.phaseBeforeNetworkPause === "paused" ? "paused" : "awaiting_answer";
     transitionTo(restorePhase as any, "reconnect_resumed");
     this.phaseBeforeNetworkPause = null;
 
@@ -1352,6 +1384,71 @@ class SessionManager {
    * The user loses only the in-flight answer — the current card is
    * re-asked and the session continues.
    */
+  /**
+   * Watch the local VU level for speech that Gemini never acknowledges.
+   * See the field-block comment for the failure mode this catches.
+   */
+  private armDeafDetector(): void {
+    this.disarmDeafDetector();
+    this.deafDetectorUnsub = useAudioLevelStore.subscribe((s) => {
+      const phase = useSessionStore.getState().phase;
+      if (phase !== "awaiting_answer") {
+        this.deafSpeechStartAt = null;
+        return;
+      }
+      if (s.peakDb > SessionManager.DEAF_SPEECH_DB) {
+        if (this.deafSpeechStartAt == null) {
+          this.deafSpeechStartAt = Date.now();
+        }
+        if (
+          Date.now() - this.deafSpeechStartAt >=
+            SessionManager.DEAF_SUSTAIN_MS &&
+          !this.deafCheckTimer
+        ) {
+          const speechAt = this.deafSpeechStartAt;
+          this.deafCheckTimer = setTimeout(() => {
+            this.deafCheckTimer = null;
+            if (this.lastGeminiInputAt >= speechAt) {
+              this.deafStrikes = 0;
+              return;
+            }
+            this.deafStrikes += 1;
+            sessionLog.warn(
+              "SessionManager",
+              "speech-level audio produced no Gemini input event",
+              { strikes: this.deafStrikes },
+            );
+            if (this.deafStrikes >= 2) {
+              this.deafStrikes = 0;
+              this.recoverFromWedgedSession("deaf_session").catch(() => {});
+            }
+          }, SessionManager.DEAF_VERDICT_MS);
+        }
+      } else if (s.peakDb < SessionManager.DEAF_SILENCE_DB) {
+        this.deafSpeechStartAt = null;
+      }
+    });
+  }
+
+  private disarmDeafDetector(): void {
+    if (this.deafDetectorUnsub) {
+      this.deafDetectorUnsub();
+      this.deafDetectorUnsub = null;
+    }
+    if (this.deafCheckTimer) {
+      clearTimeout(this.deafCheckTimer);
+      this.deafCheckTimer = null;
+    }
+    this.deafSpeechStartAt = null;
+    this.deafStrikes = 0;
+  }
+
+  /** Gemini acknowledged hearing the user — feed the deaf detector. */
+  private noteGeminiInputEvent(): void {
+    this.lastGeminiInputAt = Date.now();
+    this.deafStrikes = 0;
+  }
+
   private async recoverFromWedgedSession(reason: string): Promise<void> {
     if (this.wedgeRecoveryInFlight) return;
     const phase = useSessionStore.getState().phase;
@@ -1601,6 +1698,7 @@ class SessionManager {
     this.sawCtrlTokenTurnInEvaluating = false;
     this.awaitingToolCallForAnswer = false;
     this.noToolCallTurns = 0;
+    this.disarmDeafDetector();
     this.clearEndSessionToolTimer();
     this.commitPendingUiAdvance("end_from_notification");
     this.lastAnsweredCardId = null;
@@ -1650,6 +1748,7 @@ class SessionManager {
     this.sawCtrlTokenTurnInEvaluating = false;
     this.awaitingToolCallForAnswer = false;
     this.noToolCallTurns = 0;
+    this.disarmDeafDetector();
     this.clearEndSessionToolTimer();
     this.commitPendingUiAdvance("end_session");
     this.lastAnsweredCardId = null;

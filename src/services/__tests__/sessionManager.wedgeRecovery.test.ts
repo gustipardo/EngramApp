@@ -341,6 +341,78 @@ describe("reconnect resume — mic unmute (autopilot fix #1)", () => {
   });
 });
 
+describe("reconnect resume — phase restore mapping (autopilot 20260704-165928)", () => {
+  it("a drop during evaluating resumes into awaiting_answer, not evaluating", async () => {
+    (sessionManager as any).phaseBeforeNetworkPause = "evaluating";
+    await (sessionManager as any).resumeAfterReconnect();
+    // The in-flight answer died with the connection and the resume message
+    // re-asks the current card — restoring `evaluating` leaves the UI on
+    // "Checking your answer…" forever.
+    expect(useSessionStore.getState().phase).toBe("awaiting_answer");
+  });
+
+  it("a drop while user-paused resumes into paused", async () => {
+    (sessionManager as any).phaseBeforeNetworkPause = "paused";
+    await (sessionManager as any).resumeAfterReconnect();
+    expect(useSessionStore.getState().phase).toBe("paused");
+  });
+});
+
+describe("deaf-session detector (autopilot 20260704-165928)", () => {
+  const { useAudioLevelStore } = jest.requireActual(
+    "../../stores/useAudioLevelStore",
+  );
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-07-04T20:00:00Z"));
+    useSessionStore.setState({ phase: "awaiting_answer" } as any);
+    (sessionManager as any).lastGeminiInputAt = 0;
+    (sessionManager as any).armDeafDetector();
+  });
+
+  afterEach(() => {
+    (sessionManager as any).disarmDeafDetector();
+  });
+
+  function speakFor(ms: number) {
+    useAudioLevelStore.getState().setLevel(0.2, -20);
+    jest.advanceTimersByTime(ms);
+    useAudioLevelStore.getState().setLevel(0.2, -20);
+  }
+
+  it("2 unacknowledged speech bursts trigger cold recovery", async () => {
+    speakFor(1600); // sustained speech → verdict timer armed
+    jest.advanceTimersByTime(6001); // verdict: no Gemini input event → strike 1
+    await flush();
+    expect(mockReconnect).not.toHaveBeenCalled();
+
+    speakFor(1600);
+    jest.advanceTimersByTime(6001); // strike 2 → cold recovery
+    await flush();
+    expect(mockClearSessionResumptionHandle).toHaveBeenCalledTimes(1);
+    expect(mockReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("a Gemini input event during the verdict window clears the strike", async () => {
+    speakFor(1600);
+    // Gemini heard it (input transcription event stamps the detector).
+    (sessionManager as any).noteGeminiInputEvent();
+    jest.advanceTimersByTime(6001);
+    await flush();
+    expect((sessionManager as any).deafStrikes).toBe(0);
+    expect(mockReconnect).not.toHaveBeenCalled();
+  });
+
+  it("does not monitor outside awaiting_answer", async () => {
+    useSessionStore.setState({ phase: "giving_feedback" } as any);
+    speakFor(1600);
+    jest.advanceTimersByTime(6001);
+    await flush();
+    expect((sessionManager as any).deafStrikes).toBe(0);
+  });
+});
+
 describe("BUG 9 — recovery guards", () => {
   it("does not run recovery twice concurrently", async () => {
     let resolveReconnect: (v: boolean) => void = () => {};

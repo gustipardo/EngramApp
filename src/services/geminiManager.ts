@@ -10,6 +10,7 @@ const OUTPUT_SAMPLE_RATE = 24000;
 
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_ATTEMPT_TIMEOUT_MS = 30000;
 
 type DataChannelEventHandler = (event: any) => void;
 
@@ -139,7 +140,21 @@ class GeminiManager {
       this.cleanupConnection();
 
       try {
-        await this.connect();
+        // Bound the whole attempt. connect() has an internal 15 s WS
+        // timeout, but the credential fetch (mintLiveToken callable) runs
+        // BEFORE it and can hang far longer on a flapping network — run
+        // 20260704-165928 sat inside attempt 1 indefinitely, so attempts
+        // 2/3 and the failure path never ran. A timed-out attempt counts
+        // as failed and falls through to the next one.
+        await Promise.race([
+          this.connect(),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("reconnect attempt timed out")),
+              RECONNECT_ATTEMPT_TIMEOUT_MS,
+            ),
+          ),
+        ]);
         useConnectionStore.getState().resetReconnectAttempts();
         this.isReconnecting = false;
         sessionLog.info("Gemini", `reconnected on attempt ${attempt}`);

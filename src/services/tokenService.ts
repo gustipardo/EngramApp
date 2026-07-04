@@ -44,7 +44,12 @@ export async function getLiveCredential(): Promise<LiveCredential> {
     return { kind: "key", value: rawKey() };
   }
 
-  const callable = functions().httpsCallable("mintLiveToken");
+  // Explicit timeout: the default (70 s) is far longer than a mid-session
+  // reconnect can tolerate — a slow mint call starves the reconnect loop
+  // (autopilot run 20260704-165928).
+  const callable = functions().httpsCallable("mintLiveToken", {
+    timeout: 15000,
+  });
   const result = await callable();
   const token = (result.data as { token?: string })?.token;
   if (!token) {
