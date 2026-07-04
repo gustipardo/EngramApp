@@ -281,6 +281,29 @@ describe("BUG 9 — repeated recovery bounces", () => {
   });
 });
 
+describe("reconnect resume — mic unmute (autopilot fix #1)", () => {
+  it("resumeAfterReconnect unmutes the mic after re-arming server_vad", async () => {
+    await (sessionManager as any).resumeAfterReconnect();
+
+    expect(mockSetMicrophoneMuted).toHaveBeenCalledWith(false);
+    // handleConnectionDrop mutes; the unmute must land AFTER server_vad is
+    // re-armed or the buffered audio clear could race a hot mic.
+    const unmuteOrder = mockSetMicrophoneMuted.mock.invocationCallOrder.at(-1)!;
+    const updateOrder = mockUpdateSession.mock.invocationCallOrder.at(-1)!;
+    expect(unmuteOrder).toBeGreaterThan(updateOrder);
+    expect(useSessionStore.getState().phase).toBe("awaiting_answer");
+  });
+
+  it("cold wedge recovery ends with the mic unmuted", async () => {
+    handlerFor("response.audio_transcript.done")({ transcript: "<ctrl46>" });
+    handlerFor("response.done")({});
+    await flush();
+
+    expect(mockReconnect).toHaveBeenCalledTimes(1);
+    expect(mockSetMicrophoneMuted).toHaveBeenLastCalledWith(false);
+  });
+});
+
 describe("BUG 9 — recovery guards", () => {
   it("does not run recovery twice concurrently", async () => {
     let resolveReconnect: (v: boolean) => void = () => {};
