@@ -383,12 +383,12 @@ describe("deaf-session detector (autopilot 20260704-165928)", () => {
 
   it("2 unacknowledged speech bursts trigger cold recovery", async () => {
     speakFor(1600); // sustained speech → verdict timer armed
-    jest.advanceTimersByTime(6001); // verdict: no Gemini input event → strike 1
+    jest.advanceTimersByTime(10001); // verdict: no Gemini input event → strike 1
     await flush();
     expect(mockReconnect).not.toHaveBeenCalled();
 
     speakFor(1600);
-    jest.advanceTimersByTime(6001); // strike 2 → cold recovery
+    jest.advanceTimersByTime(10001); // strike 2 → cold recovery
     await flush();
     expect(mockClearSessionResumptionHandle).toHaveBeenCalledTimes(1);
     expect(mockReconnect).toHaveBeenCalledTimes(1);
@@ -398,7 +398,7 @@ describe("deaf-session detector (autopilot 20260704-165928)", () => {
     speakFor(1600);
     // Gemini heard it (input transcription event stamps the detector).
     (sessionManager as any).noteGeminiInputEvent();
-    jest.advanceTimersByTime(6001);
+    jest.advanceTimersByTime(10001);
     await flush();
     expect((sessionManager as any).deafStrikes).toBe(0);
     expect(mockReconnect).not.toHaveBeenCalled();
@@ -407,7 +407,7 @@ describe("deaf-session detector (autopilot 20260704-165928)", () => {
   it("does not monitor outside awaiting_answer", async () => {
     useSessionStore.setState({ phase: "giving_feedback" } as any);
     speakFor(1600);
-    jest.advanceTimersByTime(6001);
+    jest.advanceTimersByTime(10001);
     await flush();
     expect((sessionManager as any).deafStrikes).toBe(0);
   });

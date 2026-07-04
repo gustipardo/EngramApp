@@ -123,7 +123,10 @@ class SessionManager {
   private static readonly DEAF_SPEECH_DB = -30;
   private static readonly DEAF_SILENCE_DB = -45;
   private static readonly DEAF_SUSTAIN_MS = 1500;
-  private static readonly DEAF_VERDICT_MS = 6000;
+  // 10 s, not less: healthy-session input transcriptions regularly arrive
+  // 5–8 s after speech ends (single false strikes observed at 6 s in run
+  // 20260704-172033), and a false PAIR would cold-reconnect a live session.
+  private static readonly DEAF_VERDICT_MS = 10000;
   private wedgeRecoveryInFlight = false;
   private static readonly CTRL_TOKEN_RE = /<ctrl\d+>/;
 
@@ -1408,6 +1411,12 @@ class SessionManager {
           const speechAt = this.deafSpeechStartAt;
           this.deafCheckTimer = setTimeout(() => {
             this.deafCheckTimer = null;
+            // If the session has since moved past awaiting_answer, the
+            // answer was heard through some path (tool call, transcription
+            // debounce) — not deaf.
+            if (useSessionStore.getState().phase !== "awaiting_answer") {
+              return;
+            }
             if (this.lastGeminiInputAt >= speechAt) {
               this.deafStrikes = 0;
               return;
