@@ -7,25 +7,25 @@
 // `(main)/deck-select.tsx` (the deck-settings sheet's language picker).
 // Unknown BCP-47 codes fall back to "English".
 const LANGUAGE_LABELS: Record<string, string> = {
-  'en-US': 'English',
-  'en-GB': 'English',
-  'es-ES': 'Spanish',
-  'es-MX': 'Spanish',
-  'fr-FR': 'French',
-  'de-DE': 'German',
-  'it-IT': 'Italian',
-  'pt-BR': 'Portuguese',
-  'pt-PT': 'Portuguese',
-  'ja-JP': 'Japanese',
-  'ko-KR': 'Korean',
-  'zh-CN': 'Mandarin Chinese',
-  'nl-NL': 'Dutch',
-  'ru-RU': 'Russian',
+  "en-US": "English",
+  "en-GB": "English",
+  "es-ES": "Spanish",
+  "es-MX": "Spanish",
+  "fr-FR": "French",
+  "de-DE": "German",
+  "it-IT": "Italian",
+  "pt-BR": "Portuguese",
+  "pt-PT": "Portuguese",
+  "ja-JP": "Japanese",
+  "ko-KR": "Korean",
+  "zh-CN": "Mandarin Chinese",
+  "nl-NL": "Dutch",
+  "ru-RU": "Russian",
 };
 
 export function languageLabelFromCode(code: string | undefined): string {
-  if (!code) return 'English';
-  return LANGUAGE_LABELS[code] ?? 'English';
+  if (!code) return "English";
+  return LANGUAGE_LABELS[code] ?? "English";
 }
 
 export function getSystemPrompt(
@@ -35,7 +35,7 @@ export function getSystemPrompt(
   customInstructions?: string,
   languageCode?: string,
 ): string {
-  const timeOfDay = new Date().getHours() < 12 ? 'morning' : 'afternoon';
+  const timeOfDay = new Date().getHours() < 12 ? "morning" : "afternoon";
   const languageLabel = languageLabelFromCode(languageCode);
 
   const alwaysReadBackRule = alwaysReadBack
@@ -82,6 +82,7 @@ CORE BEHAVIOR:
    - c) THIRD: Ask the NEXT question by rephrasing next_card.front.
    - NEVER skip revealing the answer on incorrect. NEVER rush to the next question.
    - If next_card is null, say the session completion summary.
+   - If next_card is PRESENT, the session is NOT over — you MUST ask it. Cards answered incorrectly come back for another pass, so the session can run past the card count announced in the greeting. Do NOT conclude the deck is finished from your own count of evaluations; only \`next_card: null\` (or the user asking to stop) ends the session. Speaking the closing summary while next_card is present is a critical role failure.
 
 5. VOICE COMMANDS - Listen for these phrases:
    - "repeat" / "say that again" -> Re-read the current question without evaluating
@@ -95,6 +96,7 @@ CORE BEHAVIOR:
    - NEVER give hints. NEVER give clues. One attempt per card.
 
 7. SESSION END:
+   - The session ends ONLY when the tool returns \`next_card: null\` or the user asks to stop. NEVER end it based on your own sense of progress.
    - When no more cards OR user says end, deliver a brief closing summary spoken entirely in ${languageLabel} that conveys, in order: (a) a short praise of the user's effort, (b) the total number of cards reviewed, (c) the split of [correct] correct and [incorrect] incorrect, (d) a short encouragement to keep practicing.
    - Translate every framing word into ${languageLabel}. Do NOT speak English phrases like "Great work", "You reviewed", "Keep up the good practice" unless ${languageLabel} is English. The English template "Great work! You reviewed [total] cards. [correct] correct, [incorrect] incorrect. Keep up the good practice!" is a CONTENT REFERENCE — it is NOT a script to recite.
 ${alwaysReadBackRule}
@@ -111,9 +113,13 @@ ${alwaysReadBackRule}
    - Do NOT "clarify" the question by adding details that come from the answer.
    - Example VIOLATION: Front="Which AWS service is cheaper than Secrets Manager but has a downside?" Back="Parameter Store but doesn't have rotation" → AI says "Which service, like Parameter Store, is cheaper?" — This REVEALS the answer! WRONG!
    - Correct behavior: rephrase the front naturally without adding any back content. If the front is vague, ask it as-is.
-${customInstructions ? `
+${
+  customInstructions
+    ? `
 11. CUSTOM DECK INSTRUCTIONS (from the user — follow these as closely as possible):
-${customInstructions}` : ''}
+${customInstructions}`
+    : ""
+}
 `.trim();
 }
 
@@ -121,23 +127,25 @@ ${customInstructions}` : ''}
  * Tool definition for evaluate_and_move_next
  */
 export const evaluateAndMoveNextTool = {
-  type: 'function' as const,
-  name: 'evaluate_and_move_next',
-  description: 'Evaluates the user\'s answer, records the result, and retrieves the next card content.',
+  type: "function" as const,
+  name: "evaluate_and_move_next",
+  description:
+    "Evaluates the user's answer, records the result, and retrieves the next card content.",
   parameters: {
-    type: 'object',
+    type: "object",
     properties: {
       user_response_quality: {
-        type: 'string',
-        enum: ['correct', 'incorrect', 'skipped'],
-        description: 'The verdict based on semantic meaning. Be lenient on phrasing, strict on facts.',
+        type: "string",
+        enum: ["correct", "incorrect", "skipped"],
+        description:
+          "The verdict based on semantic meaning. Be lenient on phrasing, strict on facts.",
       },
       feedback_text: {
-        type: 'string',
-        description: 'Brief explanation of why it is correct or incorrect.',
+        type: "string",
+        description: "Brief explanation of why it is correct or incorrect.",
       },
     },
-    required: ['user_response_quality', 'feedback_text'],
+    required: ["user_response_quality", "feedback_text"],
   },
 };
 
@@ -145,19 +153,21 @@ export const evaluateAndMoveNextTool = {
  * Tool definition for override_evaluation
  */
 export const overrideEvaluationTool = {
-  type: 'function' as const,
-  name: 'override_evaluation',
-  description: 'Corrects the previous evaluation when the user says it was wrong — in either direction (incorrect→correct or correct→incorrect).',
+  type: "function" as const,
+  name: "override_evaluation",
+  description:
+    "Corrects the previous evaluation when the user says it was wrong — in either direction (incorrect→correct or correct→incorrect).",
   parameters: {
-    type: 'object',
+    type: "object",
     properties: {
       override_to: {
-        type: 'string',
-        enum: ['correct', 'incorrect'],
-        description: 'What to change the previous evaluation to. Use "correct" when the user says their answer was actually right; use "incorrect" when the user says it was actually wrong.',
+        type: "string",
+        enum: ["correct", "incorrect"],
+        description:
+          'What to change the previous evaluation to. Use "correct" when the user says their answer was actually right; use "incorrect" when the user says it was actually wrong.',
       },
     },
-    required: ['override_to'],
+    required: ["override_to"],
   },
 };
 
@@ -165,11 +175,11 @@ export const overrideEvaluationTool = {
  * Tool definition for end_session
  */
 export const endSessionTool = {
-  type: 'function' as const,
-  name: 'end_session',
-  description: 'Ends the study session when user requests to stop.',
+  type: "function" as const,
+  name: "end_session",
+  description: "Ends the study session when user requests to stop.",
   parameters: {
-    type: 'object',
+    type: "object",
     properties: {},
     required: [],
   },
@@ -204,7 +214,7 @@ export function getResumeMessage(
   frontText: string,
   backText: string,
   remainingCards: number,
-  stats: { correct: number; incorrect: number }
+  stats: { correct: number; incorrect: number },
 ): string {
   const reviewed = stats.correct + stats.incorrect;
   return `Session Resumed after a brief connection interruption.
@@ -223,23 +233,31 @@ export function formatToolResult(
   answeredCardBack: string | null,
   nextCard: { front: string; back: string } | null,
   remainingCards: number,
-  stats: { correct: number; incorrect: number }
+  stats: { correct: number; incorrect: number },
 ) {
   const isComplete = nextCard === null;
   const total = stats.correct + stats.incorrect;
 
   return {
-    status: isComplete ? 'session_complete' : 'success',
+    status: isComplete ? "session_complete" : "success",
     answered_card_back: answeredCardBack,
     next_card: nextCard,
     remaining_cards: remainingCards,
     session_stats: stats,
+    // Explicit in-band steering: the model sometimes concludes the deck is
+    // done from its own evaluation count and speaks the wrap-up while a
+    // re-served card is still attached (autopilot 20260704-161510).
+    ...(!isComplete && {
+      instruction:
+        "Session IN PROGRESS: give feedback, then ask next_card. Do NOT summarize or end the session.",
+    }),
     ...(isComplete && {
       session_summary: {
         total_reviewed: total,
         correct: stats.correct,
         incorrect: stats.incorrect,
-        accuracy_percent: total > 0 ? Math.round((stats.correct / total) * 100) : 0,
+        accuracy_percent:
+          total > 0 ? Math.round((stats.correct / total) * 100) : 0,
       },
     }),
   };

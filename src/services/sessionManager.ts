@@ -91,6 +91,19 @@ class SessionManager {
    */
   private sawCtrlTokenTurnInEvaluating = false;
   private evaluatingRecoveryBounces = 0;
+  /**
+   * Live-lock detector (autopilot run 20260704-161510): the model can drop
+   * into a conversational mode where it answers every user utterance with
+   * speech but never calls a tool again (observed after it spoke a premature
+   * wrap-up mid re-serve storm). That shape is invisible to the two BUG 9
+   * detectors — there are no ctrl tokens and no 8 s silence in `evaluating`,
+   * because every turn produces audio. Track completed AI turns that follow
+   * a user answer (evaluating entered) without any tool call; 3 in a row
+   * triggers the same cold recovery. Threshold 3, not 2: a "repeat" command
+   * or the rule-9 noise re-ask are legitimate no-tool turns.
+   */
+  private awaitingToolCallForAnswer = false;
+  private noToolCallTurns = 0;
   private wedgeRecoveryInFlight = false;
   private static readonly CTRL_TOKEN_RE = /<ctrl\d+>/;
 
@@ -603,6 +616,23 @@ class SessionManager {
       const phase = useSessionStore.getState().phase;
       if (phase === "giving_feedback") {
         useSessionStore.getState().transitionTo("awaiting_answer", "ai_done");
+        // Live-lock check: this turn answered a user utterance with speech
+        // but no tool call ever arrived (handleToolCall clears the flag).
+        if (this.awaitingToolCallForAnswer) {
+          this.awaitingToolCallForAnswer = false;
+          this.noToolCallTurns += 1;
+          sessionLog.warn(
+            "SessionManager",
+            "AI turn completed without tool call after user answer",
+            { consecutive: this.noToolCallTurns },
+          );
+          if (this.noToolCallTurns >= 3) {
+            this.noToolCallTurns = 0;
+            this.recoverFromWedgedSession("no_tool_call_livelock").catch(
+              () => {},
+            );
+          }
+        }
       }
       // BUG 9: the eval turn ended as a ctrl-token loop (no audio, no tool
       // call). Waiting is pointless — the model ignores further input in
@@ -687,6 +717,7 @@ class SessionManager {
           useSessionStore
             .getState()
             .transitionTo("evaluating", "user_done_debounced");
+          this.awaitingToolCallForAnswer = true;
           this.startEvaluatingRecovery();
         }, SessionManager.USER_DONE_DEBOUNCE_MS);
       },
@@ -983,6 +1014,11 @@ class SessionManager {
     const { call_id, arguments: argsStr } = event;
     const toolName = this.toolCallNames.get(call_id);
 
+    // Any tool call means the model is still driving the session — clear
+    // the live-lock detector regardless of which tool it is.
+    this.awaitingToolCallForAnswer = false;
+    this.noToolCallTurns = 0;
+
     try {
       const args = JSON.parse(argsStr || "{}");
 
@@ -1150,11 +1186,34 @@ class SessionManager {
     // speak the wrap-up line and skip end_session (orphan session, no
     // tool result triggered the WS to close gracefully, autopilot 21).
     //
-    // Bump by +1 to account for the next_card we are about to attach so
-    // the model never gets a contradicting pair. Does not promise more
-    // turns than the cache can deliver, but prevents the contradiction.
-    const remainingCards =
-      Math.max(0, totalDueAtStart - answered) + (nextCard ? 1 : 0);
+    // Snapshot arithmetic also UNDER-reports badly during a wrong-answer
+    // storm: with 8 due and 9 answers the formula says 1 while the real
+    // queue still holds 5 (learning re-serves + never-served new). The
+    // model, told "1 remaining" turn after turn, concluded the deck was
+    // done and spoke the wrap-up mid-session (autopilot 20260704-161510).
+    // So ask the scheduler for the deck's real queue depth (new + learning
+    // + due, i.e. the three numbers AnkiDroid shows per deck) right after
+    // the write-back. Falls back to the snapshot formula if the bridge
+    // query fails; either way the +nextCard clamp keeps the pair coherent.
+    let schedulerRemaining: number | null = null;
+    if (deckForAnswer) {
+      try {
+        const info = (await ankiBridge.getDeckInfo()).find(
+          (d) => d.deckName === deckForAnswer,
+        );
+        if (info) {
+          schedulerRemaining = info.newCount + info.learnCount + info.dueCount;
+        }
+      } catch (err) {
+        sessionLog.warn("AnkiDroid", "getDeckInfo for remaining failed", {
+          error: String(err),
+        });
+      }
+    }
+    const remainingCards = Math.max(
+      schedulerRemaining ?? Math.max(0, totalDueAtStart - answered),
+      nextCard ? 1 : 0,
+    );
 
     // Guard against the 500 ms race falsely ending the session: if the
     // answer+refill chain lost the race (slow AnkiDroid), peekNextCard()
@@ -1307,6 +1366,8 @@ class SessionManager {
     this.clearEvaluatingRecovery();
     this.sawCtrlTokenTurnInEvaluating = false;
     this.evaluatingRecoveryBounces = 0;
+    this.awaitingToolCallForAnswer = false;
+    this.noToolCallTurns = 0;
     try {
       webrtcManager.clearSessionResumptionHandle();
       webrtcManager.setMicrophoneMuted(true);
@@ -1534,6 +1595,8 @@ class SessionManager {
     this.clearEvaluatingRecovery();
     this.evaluatingRecoveryBounces = 0;
     this.sawCtrlTokenTurnInEvaluating = false;
+    this.awaitingToolCallForAnswer = false;
+    this.noToolCallTurns = 0;
     this.clearEndSessionToolTimer();
     this.commitPendingUiAdvance("end_from_notification");
     this.lastAnsweredCardId = null;
@@ -1581,6 +1644,8 @@ class SessionManager {
     this.clearEvaluatingRecovery();
     this.evaluatingRecoveryBounces = 0;
     this.sawCtrlTokenTurnInEvaluating = false;
+    this.awaitingToolCallForAnswer = false;
+    this.noToolCallTurns = 0;
     this.clearEndSessionToolTimer();
     this.commitPendingUiAdvance("end_session");
     this.lastAnsweredCardId = null;

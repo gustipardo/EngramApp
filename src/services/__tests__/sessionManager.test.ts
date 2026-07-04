@@ -77,11 +77,13 @@ jest.mock("../realtimeManager", () => ({
 const mockAnswerCard = jest.fn().mockResolvedValue(true);
 const mockTriggerSync = jest.fn().mockResolvedValue(undefined);
 const mockGetDueCardsBridge = jest.fn().mockResolvedValue([]);
+const mockGetDeckInfo = jest.fn().mockResolvedValue([]);
 jest.mock("../../native/ankiBridge", () => ({
   ankiBridge: {
     answerCard: (...a: any[]) => mockAnswerCard(...a),
     triggerSync: (...a: any[]) => mockTriggerSync(...a),
     getDueCards: (...a: any[]) => mockGetDueCardsBridge(...a),
+    getDeckInfo: (...a: any[]) => mockGetDeckInfo(...a),
   },
 }));
 
@@ -349,10 +351,37 @@ describe("sessionManager — evaluate_and_move_next dispatch", () => {
     });
 
     const result = mockSendToolResult.mock.calls[0][1];
-    // 200 due at start − 1 just-answered = 199, +1 for the attached
-    // next_card (remaining_cards must stay coherent with next_card —
-    // autopilot 21, 2026-07-03).
-    expect(result.remaining_cards).toBe(200);
+    // 200 due at start − 1 just-answered = 199 (snapshot fallback; the
+    // scheduler query returns no matching deck in this test).
+    expect(result.remaining_cards).toBe(199);
+  });
+
+  // Autopilot 20260704-161510: snapshot arithmetic under-reports during a
+  // wrong-answer storm (8 due, 9 answered → formula says ~1 while the real
+  // queue holds 5), which made the model wrap up mid-session. When the
+  // bridge can report the deck's real queue depth, use it.
+  it("reports remaining_cards from the scheduler's real queue depth when available", async () => {
+    useSessionStore.setState({
+      totalDueAtStart: 8,
+      stats: { correct: 3, incorrect: 6 },
+    });
+    mockGetDeckInfo.mockResolvedValueOnce([
+      {
+        deckName: "Aws Exam SA",
+        newCount: 2,
+        learnCount: 3,
+        dueCount: 0,
+        reviewCount: 0,
+      },
+    ]);
+
+    await (sessionManager as any).handleEvaluateAndMoveNext("c", {
+      user_response_quality: "correct",
+      feedback_text: "ok",
+    });
+
+    const result = mockSendToolResult.mock.calls[0][1];
+    expect(result.remaining_cards).toBe(5);
   });
 
   it("keeps remaining_cards coherent with next_card past the snapshot (re-served ease-1 card)", async () => {

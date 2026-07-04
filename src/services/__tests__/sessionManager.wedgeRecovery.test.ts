@@ -187,6 +187,8 @@ beforeEach(() => {
   (sessionManager as any).wedgeRecoveryInFlight = false;
   (sessionManager as any).sawCtrlTokenTurnInEvaluating = false;
   (sessionManager as any).evaluatingRecoveryBounces = 0;
+  (sessionManager as any).awaitingToolCallForAnswer = false;
+  (sessionManager as any).noToolCallTurns = 0;
   (sessionManager as any).phaseBeforeNetworkPause = null;
   (sessionManager as any).registerEventHandlers();
 });
@@ -278,6 +280,41 @@ describe("BUG 9 — repeated recovery bounces", () => {
 
     expect((sessionManager as any).evaluatingRecoveryBounces).toBe(0);
     expect((sessionManager as any).sawCtrlTokenTurnInEvaluating).toBe(false);
+  });
+});
+
+describe("live-lock watchdog — AI turns without tool call (autopilot 20260704)", () => {
+  /** Simulate one full "user answered → model spoke, no tool call" turn. */
+  async function noToolTurn() {
+    (sessionManager as any).awaitingToolCallForAnswer = true;
+    useSessionStore.setState({ phase: "giving_feedback" } as any);
+    handlerFor("response.done")({});
+    await flush();
+  }
+
+  it("3 consecutive no-tool turns after user answers trigger cold recovery", async () => {
+    await noToolTurn();
+    await noToolTurn();
+    expect(mockReconnect).not.toHaveBeenCalled();
+
+    await noToolTurn();
+    expect(mockClearSessionResumptionHandle).toHaveBeenCalledTimes(1);
+    expect(mockReconnect).toHaveBeenCalledTimes(1);
+    expect(mockSendTextMessage).toHaveBeenCalledWith("resume-msg");
+    expect(useSessionStore.getState().phase).toBe("awaiting_answer");
+  });
+
+  it("any tool call resets the no-tool-turn counter", async () => {
+    await noToolTurn();
+    await noToolTurn();
+    await (sessionManager as any).handleToolCall({
+      call_id: "x",
+      arguments: "{}",
+    });
+    expect((sessionManager as any).noToolCallTurns).toBe(0);
+
+    await noToolTurn();
+    expect(mockReconnect).not.toHaveBeenCalled();
   });
 });
 
