@@ -124,6 +124,7 @@ App-UI localization (EN/ES) via `i18n-js` + `expo-localization`. **Separate conc
 ### Components (`src/components/`)
 
 - `EngramWordmark.tsx` — Brand wordmark used on onboarding / deck-select headers.
+- `LetterAvatar.tsx` + `letterAvatars.ts` — Illuminated-manuscript account avatar. `avatarFor(nameOrEmail)` maps a user's initial (first char of displayName → email → `?`, uppercased) to one of 37 bundled images in `assets/avatars/` (A–Z, 0–9, `?` fallback); `LetterAvatar` renders it round. Used in `deck-select.tsx` (36px header button) + `settings.tsx` (48px account card). Assets are native-bundled → a rebuild is needed to see changes. Regen recipe: session-22 entry in `../.claude/context/06-status.md`.
 
 ### Native Modules (`modules/`)
 

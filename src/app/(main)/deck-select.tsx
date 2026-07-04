@@ -31,6 +31,7 @@ import { AnalyticsEvents } from "../../services/analytics";
 import type { DeckInfo } from "../../types/anki";
 import { type Theme, darkTheme, lightTheme } from "../../theme/appTheme";
 import { EngramWordmark } from "../../components/EngramWordmark";
+import { LetterAvatar } from "../../components/LetterAvatar";
 import { useAutostartEnabled } from "../../services/autostartFlag";
 import { useT } from "../../i18n";
 
@@ -83,10 +84,6 @@ export default function DeckSelectScreen() {
   const refreshTrialStatus = useTrialStore((s) => s.refresh);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
-  const accountInitial = (user?.displayName || user?.email || "?")
-    .trim()
-    .charAt(0)
-    .toUpperCase();
   // Unified deck-settings sheet (language + tutor instructions). Replaces
   // the standalone instructions modal — same surface, more obvious entry
   // point via the gear icon on each row.
@@ -517,16 +514,15 @@ export default function DeckSelectScreen() {
                 width: 36,
                 height: 36,
                 borderRadius: 18,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: t.pressHighlight,
+                overflow: "hidden",
                 borderWidth: 1,
                 borderColor: t.border,
               }}
             >
-              <Text style={{ color: t.text, fontSize: 15, fontWeight: "700" }}>
-                {accountInitial}
-              </Text>
+              <LetterAvatar
+                identity={user?.displayName || user?.email}
+                size={34}
+              />
             </Pressable>
           </View>
         </View>

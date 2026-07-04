@@ -28,6 +28,7 @@ import {
 } from "../../services/billingService";
 import { AnalyticsEvents } from "../../services/analytics";
 import { paymentBypassed, authBypassed } from "../../config/env";
+import { LetterAvatar } from "../../components/LetterAvatar";
 import { derivePlanState } from "../../utils/planState";
 import { appTheme, type Theme } from "../../theme/appTheme";
 import { TERMS_URL, PRIVACY_URL, SUPPORT_EMAIL } from "../../config/links";
@@ -75,11 +76,6 @@ export default function SettingsScreen() {
       refreshTrialStatus();
     }
   }, [dev, user, trialStatus, trialChecking, refreshTrialStatus]);
-
-  const accountInitial = (user?.displayName || user?.email || "?")
-    .trim()
-    .charAt(0)
-    .toUpperCase();
 
   function handleBack() {
     if (router.canGoBack()) router.back();
@@ -233,23 +229,11 @@ export default function SettingsScreen() {
             padding: 16,
           }}
         >
-          <View
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: 24,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: t.accent,
-              marginRight: 14,
-            }}
-          >
-            <Text
-              style={{ color: t.textOnAccent, fontSize: 20, fontWeight: "700" }}
-            >
-              {accountInitial}
-            </Text>
-          </View>
+          <LetterAvatar
+            identity={user?.displayName || user?.email}
+            size={48}
+            style={{ marginRight: 14 }}
+          />
           <View style={{ flex: 1, minWidth: 0 }}>
             <View
               style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
