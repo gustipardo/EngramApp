@@ -1,7 +1,11 @@
 import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { defineSecret } from "firebase-functions/params";
 import { GoogleGenAI } from "@google/genai";
+import { androidpublisher, auth as gAuth } from "@googleapis/androidpublisher";
+import { createHash } from "crypto";
+import { logger } from "firebase-functions/v2";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -36,6 +40,9 @@ interface UserData {
   subscriptionProductId?: string;
   subscriptionPurchaseToken?: string;
   subscriptionUpdatedAt?: FirebaseFirestore.Timestamp;
+  // From Google's purchases.subscriptions.get response. Absent on seeded
+  // test accounts (they bypass verifyPurchase) — treated as non-expiring.
+  subscriptionExpiryMillis?: number;
 }
 
 export interface TrialStatus {
@@ -61,7 +68,9 @@ export interface TrialStatus {
 export function computeTrialStatus(
   userData: UserData | undefined,
 ): TrialStatus {
-  if (userData?.subscriptionStatus === "active") {
+  const subExpiry = userData?.subscriptionExpiryMillis;
+  const subUnexpired = subExpiry === undefined || subExpiry > Date.now();
+  if (userData?.subscriptionStatus === "active" && subUnexpired) {
     return {
       isActive: true,
       daysRemaining: 0,
@@ -200,12 +209,78 @@ export const recordSession = onCall(async (request) => {
 
 // ─── verifyPurchase ─────────────────────────────────────────────────
 // Called after a successful in-app purchase to update subscription status.
+// Full server-side validation (pre-launch blocker #2, closed 2026-07-04):
+//
+//   1. productId allow-list (only our Play subscription SKUs).
+//   2. purchaseToken validated against Google Play Developer API
+//      (purchases.subscriptions.get) using the function's runtime service
+//      account via ADC. REQUIRES the service account to be granted access
+//      in Play Console → Users and permissions (see FREE-QUOTA.md).
+//   3. Idempotency: a purchaseToken is bound to the first uid that verifies
+//      it (purchaseTokens/{sha256}); reuse on another account → already-exists.
+//   4. Entitlement stored with Google's expiryTimeMillis, not a bare flag;
+//      computeTrialStatus treats a past expiry as not subscribed, and the
+//      weekly reverifySubscriptions job refreshes/expires it server-side.
+//
 // Uses set(merge) instead of update() so the first purchase on a brand-new
 // user (where checkTrialStatus hasn't run yet — race) doesn't throw.
-//
-// TODO: Verify purchase with Google Play Developer API
-//   For now, trust the client and update status. See pre-launch blockers
-//   in `.claude/context/06-status.md`.
+
+const PLAY_PACKAGE_NAME = "com.engram.app";
+
+function tokenHash(purchaseToken: string): string {
+  return createHash("sha256").update(purchaseToken).digest("hex");
+}
+
+/**
+ * Validate a subscription purchase token against the Play Developer API.
+ * Returns the expiry when the subscription is currently paid/entitled.
+ * Throws HttpsError for definitive rejections; lets network/permission
+ * errors surface as `internal` with a log (never silently grants).
+ */
+async function fetchPlaySubscription(
+  productId: string,
+  purchaseToken: string,
+): Promise<{ expiryMillis: number; linkedPurchaseToken?: string }> {
+  const auth = new gAuth.GoogleAuth({
+    scopes: ["https://www.googleapis.com/auth/androidpublisher"],
+  });
+  const publisher = androidpublisher({ version: "v3", auth });
+
+  let sub;
+  try {
+    const res = await publisher.purchases.subscriptions.get({
+      packageName: PLAY_PACKAGE_NAME,
+      subscriptionId: productId,
+      token: purchaseToken,
+    });
+    sub = res.data;
+  } catch (err: unknown) {
+    const code = (err as { code?: number; status?: number }).code ?? 0;
+    if (code === 400 || code === 404 || code === 410) {
+      // Definitive: token malformed, not found, or gone (refunded/expired
+      // long ago). A made-up token lands here.
+      throw new HttpsError("invalid-argument", "invalid_purchase_token");
+    }
+    // 401/403 = service account not linked in Play Console, or API not
+    // enabled — a config problem, not a user problem. Don't grant.
+    logger.error("Play API subscription lookup failed", {
+      productId,
+      code,
+      err: String(err),
+    });
+    throw new HttpsError("internal", "purchase_verification_unavailable");
+  }
+
+  const expiryMillis = Number(sub.expiryTimeMillis ?? 0);
+  if (!expiryMillis || expiryMillis <= Date.now()) {
+    throw new HttpsError("failed-precondition", "subscription_expired");
+  }
+  return {
+    expiryMillis,
+    linkedPurchaseToken: sub.linkedPurchaseToken ?? undefined,
+  };
+}
+
 export const verifyPurchase = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Must be signed in");
@@ -225,25 +300,121 @@ export const verifyPurchase = onCall(async (request) => {
 
   // Allow-list: only our own Play subscription products can grant an
   // entitlement. Without this, any signed-in client could flip itself to
-  // subscriptionStatus='active' with a made-up productId. Full Play
-  // Developer API validation of the purchaseToken is still the TODO above.
+  // subscriptionStatus='active' with a made-up productId.
   if (!planFromProductId(productId)) {
     throw new HttpsError("invalid-argument", `Unknown productId: ${productId}`);
   }
 
   const uid = request.auth.uid;
-  await db.collection("users").doc(uid).set(
-    {
-      subscriptionStatus: "active",
-      subscriptionProductId: productId,
-      subscriptionPurchaseToken: purchaseToken,
-      subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    },
-    { merge: true },
+
+  // Server-side validation BEFORE any write.
+  const { expiryMillis, linkedPurchaseToken } = await fetchPlaySubscription(
+    productId,
+    purchaseToken,
   );
 
-  return { status: "success" };
+  // Bind token → uid atomically. Doc id is the token's sha256 (tokens are
+  // long and their charset isn't guaranteed doc-id-safe).
+  const tokenRef = db
+    .collection("purchaseTokens")
+    .doc(tokenHash(purchaseToken));
+  const userRef = db.collection("users").doc(uid);
+
+  await db.runTransaction(async (tx) => {
+    const tokenSnap = await tx.get(tokenRef);
+    if (tokenSnap.exists && tokenSnap.data()?.uid !== uid) {
+      // Same token already granted an entitlement to a different account.
+      throw new HttpsError("already-exists", "purchase_token_already_used");
+    }
+    tx.set(tokenRef, {
+      uid,
+      productId,
+      // On upgrades/downgrades Play issues a new token linked to the old
+      // one; kept for audit/debugging.
+      linkedPurchaseToken: linkedPurchaseToken ?? null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    tx.set(
+      userRef,
+      {
+        subscriptionStatus: "active",
+        subscriptionProductId: productId,
+        subscriptionPurchaseToken: purchaseToken,
+        subscriptionExpiryMillis: expiryMillis,
+        subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
+
+  return { status: "success", expiryMillis };
 });
+
+// ─── reverifySubscriptions ──────────────────────────────────────────
+// Weekly server-side re-check of every 'active' subscription against the
+// Play Developer API, so lapsed/refunded subs lose access even though the
+// client never reports cancellation (Play owns the cancel flow).
+//
+//   - Renewed: refresh subscriptionExpiryMillis.
+//   - Expired/refunded/invalid token: flip subscriptionStatus → 'none'
+//     (fields kept for audit; the user falls back to trial math).
+//   - Seeded test accounts (TEST_SEED_* tokens, no real Play purchase)
+//     are skipped — they exist only in Firestore.
+//   - Transient API errors: log and leave the user untouched (grace);
+//     the next weekly run retries. computeTrialStatus also hard-stops
+//     entitlement at the stored expiry regardless of this job.
+export const reverifySubscriptions = onSchedule(
+  "every monday 09:00",
+  async () => {
+    const snap = await db
+      .collection("users")
+      .where("subscriptionStatus", "==", "active")
+      .get();
+
+    for (const doc of snap.docs) {
+      const data = doc.data() as UserData;
+      const token = data.subscriptionPurchaseToken;
+      const productId = data.subscriptionProductId;
+      if (!token || !productId || token.startsWith("TEST_SEED_")) continue;
+      if (!planFromProductId(productId)) continue;
+
+      try {
+        const { expiryMillis } = await fetchPlaySubscription(productId, token);
+        await doc.ref.set(
+          {
+            subscriptionExpiryMillis: expiryMillis,
+            subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      } catch (err: unknown) {
+        const httpsErr = err as HttpsError;
+        const definitive =
+          httpsErr.code === "invalid-argument" ||
+          httpsErr.code === "failed-precondition";
+        if (definitive) {
+          await doc.ref.set(
+            {
+              subscriptionStatus: "none",
+              subscriptionUpdatedAt:
+                admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+          logger.info("Subscription expired/revoked", {
+            uid: doc.id,
+            productId,
+          });
+        } else {
+          logger.warn("Re-verify transient failure, skipping user", {
+            uid: doc.id,
+            err: String(err),
+          });
+        }
+      }
+    }
+  },
+);
 
 // ─── mintLiveToken ──────────────────────────────────────────────────
 // Token broker (pre-launch blocker #1). Mints a short-lived, single-use
