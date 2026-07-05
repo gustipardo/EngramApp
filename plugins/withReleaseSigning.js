@@ -75,7 +75,7 @@ module.exports = function withReleaseSigning(config) {
       if (existing) existing.value = value;
       else c.modResults.push({ type: "property", key, value });
     };
-    set("android.enableProguardInReleaseBuilds", "true");
+    set("android.enableMinifyInReleaseBuilds", "true");
     set("android.enableShrinkResourcesInReleaseBuilds", "true");
     return c;
   });

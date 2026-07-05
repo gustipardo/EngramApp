@@ -10,13 +10,19 @@
 # the environment so the config is deterministic.
 #
 # Usage:
-#   scripts/build-release.sh              # build + install on connected device
+#   scripts/build-release.sh              # build + install APK on connected device
+#   scripts/build-release.sh --aab        # build the Play Store bundle (.aab), no install
 #   ANDROID_SERIAL=<serial> scripts/build-release.sh
 #
-# Output APK: android/app/build/outputs/apk/release/app-release.apk
+# Output: android/app/build/outputs/apk/release/app-release.apk
+#     or: android/app/build/outputs/bundle/release/app-release.aab (--aab)
 #
-# NOTE: release is still signed with the debug keystore and unminified —
-# fine for personal sideload testing, a blocker for Play (see ROADMAP.md).
+# Signing: release builds are signed with the real keystore at
+# ../keystore/engram-release.jks (injected by plugins/withReleaseSigning.js,
+# which also enables R8 + resource shrinking). If keystore.properties is
+# missing it falls back to the debug keystore — the cert check below will
+# flag that. BACK UP the keystore folder; losing it means losing the Play
+# upload key.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -33,5 +39,26 @@ fi
 
 export APP_MODE=production
 
-echo "Building release with APP_MODE=production (raw Gemini key nulled in extra)..."
-npx expo run:android --variant release
+verify_cert() { # $1 = artifact path
+  local subject
+  subject=$(keytool -printcert -jarfile "$1" 2>/dev/null | grep -m1 "Owner:" || true)
+  echo "Signing cert: ${subject:-<none found>}"
+  case "$subject" in
+    *CN=Engram*) echo "OK: signed with the Engram release keystore." ;;
+    *) echo "WARNING: NOT signed with the Engram release key (debug fallback?)." >&2 ;;
+  esac
+}
+
+if [ "${1:-}" = "--aab" ]; then
+  echo "Building Play Store bundle with APP_MODE=production..."
+  # prebuild keeps android/ in sync with app.json + plugins before gradle runs
+  npx expo prebuild --platform android --no-install
+  (cd android && ./gradlew bundleRelease)
+  AAB=android/app/build/outputs/bundle/release/app-release.aab
+  ls -lh "$AAB"
+  verify_cert "$AAB"
+else
+  echo "Building release APK with APP_MODE=production (raw Gemini key nulled in extra)..."
+  npx expo run:android --variant release
+  verify_cert android/app/build/outputs/apk/release/app-release.apk
+fi
