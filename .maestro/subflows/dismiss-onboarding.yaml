@@ -2,7 +2,7 @@
 # safe to invoke even after onboarding has been completed (the visible
 # checks no-op silently).
 
-appId: com.realtimeapionmobile
+appId: com.engram.app
 
 ---
 - runFlow:

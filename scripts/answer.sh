@@ -42,8 +42,8 @@ else
   exit 2
 fi
 
-URL="exp+realtimeapionmobile://simulate?answer=${ENCODED}"
-PKG="com.anonymous.RealtimeApiOnMobile"
+URL="engram://simulate?answer=${ENCODED}"
+PKG="com.engram.app"
 
 echo "answer.sh: sending → $URL" >&2
 

@@ -263,7 +263,7 @@ export async function openManageSubscriptions(
 ): Promise<void> {
   const pkg =
     (Constants.expoConfig as any)?.android?.package ??
-    "com.anonymous.RealtimeApiOnMobile";
+    "com.engram.app";
   const productId = sku ? SKU_MAP[sku] : undefined;
   const url = productId
     ? `https://play.google.com/store/account/subscriptions?sku=${productId}&package=${pkg}`

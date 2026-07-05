@@ -95,9 +95,9 @@ LOG_FILE="$RUN_DIR/${RUN_ID}.log"
 SUMMARY_FILE="$RUN_DIR/${RUN_ID}.summary.txt"
 mkdir -p "$RUN_DIR" "$SCREENSHOTS_DIR"
 
-PKG="com.anonymous.RealtimeApiOnMobile"
+PKG="com.engram.app"
 METRO_HOST="${METRO_HOST:-localhost}"
-LAUNCH_URL="exp+realtimeapionmobile://expo-development-client/?url=http%3A%2F%2F${METRO_HOST}%3A8081&autostart=1"
+LAUNCH_URL="exp+engram://expo-development-client/?url=http%3A%2F%2F${METRO_HOST}%3A8081&autostart=1"
 
 # ── Helper: wait for a log marker with timeout ────────────────────────────────
 
@@ -240,7 +240,7 @@ for i in "${!SCENARIO_ANSWERS[@]}"; do
     # Inject via the simulate deep link (dev-only route)
     ENCODED_ANSWER="$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$ANSWER")"
     adb -s "$ANDROID_SERIAL" shell am start -a android.intent.action.VIEW \
-        -d "exp+realtimeapionmobile://simulate?answer=${ENCODED_ANSWER}" \
+        -d "engram://simulate?answer=${ENCODED_ANSWER}" \
         "$PKG" >/dev/null 2>&1 || true
 
     log "Waiting ${SCENARIO_ANSWER_DELAY_S}s for tutor response..."

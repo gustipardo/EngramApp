@@ -40,7 +40,7 @@ Android-only Expo (SDK 54) + React Native app. Voice-powered study tutor that re
 
 **Single AI backend: Gemini Live** via WebSocket (`gemini-2.5-flash-native-audio-preview-12-2025`, native audio). `realtimeManager` is a direct re-export of `geminiManager`. Auth: in production the client fetches a single-use ephemeral token from the `mintLiveToken` Cloud Function (`src/services/tokenService.ts`, token broker — the raw key never ships in a release APK); in dev with the payment gate bypassed it falls back to `GEMINI_API_KEY` from `.env` via `app.config.js`. Release builds go through `scripts/build-release.sh` (enforces `APP_MODE=production`).
 
-App slug (`RealtimeApiOnMobile`) is a legacy name from when the app was OpenAI-only — rename to "Engram" (`com.engram.app`) is P1 in TODOLIST.md.
+App identity: slug `engram`, package `com.engram.app`, scheme `engram://` (renamed 2026-07-04 from the legacy OpenAI-era `RealtimeApiOnMobile` / `com.anonymous.*`).
 
 ## Common Commands
 
@@ -159,5 +159,5 @@ Firebase Cloud Functions (TypeScript, Firebase Admin SDK):
 
 - `TODOLIST.md` — Current P0/P1 punch list (Play Store products, PostHog key, app rename).
 - `SETUP.md` — Developer setup guide (env vars, release build recipe).
-- `PLAY-STORE.md` — Google Play policy & compliance notes. Read before preparing a Play release or answering "is X allowed on Play?" (cross-app AnkiDroid module, mic foreground service, Data Safety, the `com.anonymous.*` package rename, Anki trademark).
+- `PLAY-STORE.md` — Google Play policy & compliance notes. Read before preparing a Play release or answering "is X allowed on Play?" (cross-app AnkiDroid module, mic foreground service, Data Safety, the `com.engram.app` package id, Anki trademark).
 - `FREE-QUOTA.md` — Free trial / quota contract (7 days OR 10 sessions, server-tracked). Read before touching `functions/src/` trial logic or `trialService.ts`. Status: implemented and tested (2026-06-24, session 8).

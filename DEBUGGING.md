@@ -27,8 +27,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 # 4. Launch the app pointing at host Metro
 adb reverse tcp:8081 tcp:8081
 adb shell am start -a android.intent.action.VIEW \
-  -d "exp+realtimeapionmobile://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081" \
-  com.anonymous.RealtimeApiOnMobile
+  -d "exp+engram://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081" \
+  com.engram.app
 
 # 5. Stream the structured logs — broaden filter to include native module
 #    tags so AnkiDroidQueries and AudioTrackManager lines come through.
@@ -82,7 +82,7 @@ errors or **hard-crashes**:
 | `android.permission.POST_NOTIFICATIONS`         | FGS notification silently absent (no crash)                                                                                                                |
 
 ```bash
-PKG=com.anonymous.RealtimeApiOnMobile
+PKG=com.engram.app
 adb shell pm grant $PKG com.ichi2.anki.permission.READ_WRITE_DATABASE
 adb shell pm grant $PKG android.permission.RECORD_AUDIO
 adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS
@@ -262,8 +262,8 @@ Append `&autostart=1` to the dev-client deep link:
 
 ```bash
 adb shell am start -a android.intent.action.VIEW \
-  -d "exp+realtimeapionmobile://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081&autostart=1" \
-  com.anonymous.RealtimeApiOnMobile
+  -d "exp+engram://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081&autostart=1" \
+  com.engram.app
 ```
 
 `scripts/test-flow.sh` already includes `&autostart=1` so the test pipeline
@@ -345,7 +345,7 @@ What it does:
 
 1. URL-encodes the answer.
 2. Fires `adb shell am start -a android.intent.action.VIEW -d
-"exp+realtimeapionmobile://simulate?answer=…"`.
+"engram://simulate?answer=…"`.
 3. `_layout.tsx`'s `Linking` listener parses the URL and calls
    `sessionManager.simulateUserAnswer(text)`.
 4. The simulator: mutes the mic → logs `[SIM] injecting user answer` →
@@ -514,13 +514,13 @@ adb devices
 adb shell dumpsys activity activities | grep topResumedActivity
 
 # Granted Anki permission?
-adb shell dumpsys package com.anonymous.RealtimeApiOnMobile | grep -i anki
+adb shell dumpsys package com.engram.app | grep -i anki
 
 # Force-stop and restart the app (clean state)
-adb shell am force-stop com.anonymous.RealtimeApiOnMobile
+adb shell am force-stop com.engram.app
 adb shell am start -a android.intent.action.VIEW \
-  -d "exp+realtimeapionmobile://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081" \
-  com.anonymous.RealtimeApiOnMobile
+  -d "exp+engram://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081" \
+  com.engram.app
 
 # Tail logcat with the structured filter
 adb logcat -v time ReactNativeJS:V '*:S' | \
@@ -615,7 +615,7 @@ multi-device runs so it's visible in script output:
 ```bash
 source scripts/_device.sh
 adb reverse tcp:8081 tcp:8081
-adb shell monkey -p com.anonymous.RealtimeApiOnMobile -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.engram.app -c android.intent.category.LAUNCHER 1
 ```
 
 Both phone and emulator can use `localhost:8081` via `adb reverse` (the

@@ -1,6 +1,6 @@
 # Setup Guide
 
-This guide explains how to set up **Engram** (project slug: `RealtimeApiOnMobile` — pending rename, see `TODOLIST.md` P1) from scratch.
+This guide explains how to set up **Engram** (slug `engram`, package `com.engram.app`) from scratch.
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@ This guide explains how to set up **Engram** (project slug: `RealtimeApiOnMobile
 
     ```bash
     git clone <repository_url>
-    cd RealtimeApiOnMobile   # current on-disk slug; rename pending
+    cd App
     ```
 
 2.  **Install Dependencies:**

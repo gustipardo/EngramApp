@@ -31,7 +31,7 @@
 # requires the prereqs above to exist before first execution. Adjust
 # `tapOn` text values to match your build.
 
-appId: com.realtimeapionmobile  # placeholder — replace with the real
+appId: com.engram.app  # placeholder — replace with the real
                                 # applicationId from android/app/build.gradle
                                 # once the rename to "engram" lands
 

@@ -41,6 +41,51 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:866005886684:android:18d4ab42615b4bc9d3f619",
+        "android_client_info": {
+          "package_name": "com.engram.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "866005886684-25qrrldh3kphhtu40ilfhlur94ruvp8e.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.engram.app",
+            "certificate_hash": "5de58186a17f81afe1651a8de7bd79c475cf5bc6"
+          }
+        },
+        {
+          "client_id": "866005886684-rep1sjkmitd6uc3kq6lbd94fd8glngdf.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.engram.app",
+            "certificate_hash": "d7ffa3d85bbb7f4da2c710072b5353d83a2b792b"
+          }
+        },
+        {
+          "client_id": "866005886684-tvsh7olnb5gd83s7t47jfq115mrk1en2.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDEb_mYbXvYkKPYg6hA-ziFjNSGt9KP_S8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "866005886684-tvsh7olnb5gd83s7t47jfq115mrk1en2.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"

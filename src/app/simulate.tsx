@@ -9,7 +9,7 @@ import { isDev } from '../config/env';
  *
  * Trigger from host with:
  *   adb shell am start -a android.intent.action.VIEW \
- *     -d "exp+realtimeapionmobile://simulate?answer=<url-encoded>"
+ *     -d "engram://simulate?answer=<url-encoded>"
  *
  * Why a route (not a `Linking.addEventListener`):
  *   expo-router catches the URL anyway and would push `/simulate` on top

@@ -11,7 +11,7 @@
 or running a microphone foreground service is inherently against policy. The app does
 **not** "interfere with other apps" in the policy sense. The things that actually
 decide the review outcome are paperwork (a foreground-service declaration, an accurate
-Data Safety disclosure) and one permanent config fix (the `com.anonymous.*` package id)
+Data Safety disclosure) and one permanent config fix (the package id — done: `com.engram.app`)
 — not the architecture.
 
 ## Why the AnkiDroid module is allowed (and is NOT "interference")
@@ -77,13 +77,12 @@ app functionality_, and the **privacy policy must match**.
 policy + Data Safety must say "processed by Google Gemini." A store disclosure that implies
 _no one_ receives the audio is a **misrepresentation** flag. Keep the two consistent.
 
-### 3. `com.anonymous.RealtimeApiOnMobile` applicationId — permanent must-fix
+### 3. applicationId — DONE 2026-07-04
 
-`app.json` still uses the Expo placeholder `com.anonymous.*`. Play **rejects `com.anonymous.*`**
-ids, and the applicationId is **immutable after the first upload**. Set a real id (e.g.
-`app.engram.flashcards`) **before the first release**. Do this together with the P1 app-slug
-rename (`RealtimeApiOnMobile` → Engram) so it's one coordinated change (Firebase re-registration,
-scheme, etc.).
+Renamed to **`com.engram.app`** (slug `engram`, scheme `engram://`) together with the Firebase
+re-registration (new Android app `1:866005886684:android:18d4ab42615b4bc9d3f619`, debug+release
+SHA-1s registered, fresh `google-services.json`). The applicationId is **immutable after the
+first upload** — it is final.
 
 ### 4. Permissions hygiene
 
@@ -104,7 +103,7 @@ listing for that.
 
 ## Pre-submission checklist
 
-- [ ] Rename applicationId off `com.anonymous.*` (permanent — do before first upload).
+- [x] Rename applicationId → `com.engram.app` (done 2026-07-04, before first upload).
 - [ ] Prepare the **Foreground Service (microphone) declaration** + a demo video.
 - [ ] Complete **Data Safety**: Audio = collected + shared with third party (Google Gemini),
       not stored; ensure the **privacy policy** matches and doesn't imply "no third party."

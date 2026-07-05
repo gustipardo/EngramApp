@@ -35,7 +35,7 @@ RUN_ID="$(date +%Y%m%d-%H%M%S)"
 LOG_FILE="$RUNS_DIR/${RUN_ID}.log"
 SUMMARY_FILE="$RUNS_DIR/${RUN_ID}.summary.txt"
 
-PKG="com.anonymous.RealtimeApiOnMobile"
+PKG="com.engram.app"
 # &autostart=1 opts into deck-select autostart for this launch only —
 # overrides AUTO_START_ENABLED=false in .env so daily icon-launches stay
 # manual. See src/services/autostartFlag.ts and src/app/_layout.tsx.
@@ -46,7 +46,7 @@ PKG="com.anonymous.RealtimeApiOnMobile"
 # host Metro). The old hardcoded 10.0.2.2 only resolved on the emulator.
 # Override with METRO_HOST=<host-ip> to bypass the reverse tunnel if needed.
 METRO_HOST="${METRO_HOST:-localhost}"
-DEV_URL="exp+realtimeapionmobile://expo-development-client/?url=http%3A%2F%2F${METRO_HOST}%3A8081&autostart=1"
+DEV_URL="exp+engram://expo-development-client/?url=http%3A%2F%2F${METRO_HOST}%3A8081&autostart=1"
 
 # Default answers: 4 declarative attempts.  Wording matters — Gemini Live
 # emits the `evaluate_and_move_next` tool reliably when the user makes a

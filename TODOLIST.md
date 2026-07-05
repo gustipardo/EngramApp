@@ -123,8 +123,7 @@ From the "tutor never advances" report (release build, token path). Details: SES
 
 ### Play Store listing preparation
 
-- [ ] Update app name from "RealtimeApiOnMobile" to "Engram"
-- [ ] Update `app.json`: slug + package name (`com.engram.app`; `name` is already "Engram")
+- [x] Update app name / slug / package → `engram` / `com.engram.app` / scheme `engram://` (2026-07-04; Firebase re-registered, google-services.json refreshed)
 - [ ] Create Play Store screenshots
 - [ ] Write Play Store description (bilingual EN/ES)
 - [ ] Create app icon and feature graphic

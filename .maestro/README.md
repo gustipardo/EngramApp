@@ -7,7 +7,7 @@ Real-device / emulator UI flows driving the actual Engram APK. See
 
 | File                          | Covers                                                                                                                                                      | Run                            |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `session-deck-isolation.yaml` | Deck selection → session → correct card per index (SCAFFOLD; uses a placeholder appId — needs the real `com.anonymous.RealtimeApiOnMobile` before running). | `npm run test:maestro`         |
+| `session-deck-isolation.yaml` | Deck selection → session → correct card per index (SCAFFOLD; appId fixed to `com.engram.app`, selectors still unvalidated). | `npm run test:maestro`         |
 | `account-settings.yaml`       | Avatar entry → Account screen render → dev-mode gating → live Dark toggle → back-nav. 4 labeled screenshots to `_debug/screenshots/`.                       | `npm run test:maestro:account` |
 
 `subflows/dismiss-onboarding.yaml` — reusable onboarding skip (also placeholder appId).
@@ -22,10 +22,8 @@ Real-device / emulator UI flows driving the actual Engram APK. See
 
 ## appId
 
-Use the **real** application id: `com.anonymous.RealtimeApiOnMobile`.
-`account-settings.yaml` already does. The older `session-deck-isolation.yaml`
-and `subflows/dismiss-onboarding.yaml` still carry the placeholder
-`com.realtimeapionmobile` from before — fix those before relying on them.
+Use the **real** application id: `com.engram.app`.
+All flows now use `com.engram.app` (fixed in the 2026-07-04 rename).
 
 ## Selectors
 

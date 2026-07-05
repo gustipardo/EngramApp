@@ -17,7 +17,7 @@
 
 ## What this project is
 
-**Engram** (internal slug: `RealtimeApiOnMobile`) — an Android-only Expo + React
+**Engram** (slug `engram`, package `com.engram.app`) — an Android-only Expo + React
 Native app that reads AnkiDroid flashcard decks and studies them by voice with a
 realtime Gemini Live AI tutor. The user speaks their answers; the AI evaluates
 them and advances the deck. Anti-Duolingo positioning, targeting Anki power users
@@ -331,7 +331,7 @@ app works for the happy path.
 
 ### Other P1
 
-- Rename app slug from `RealtimeApiOnMobile` → Engram (~25 files + Firebase re-registration)
+- ~~Rename app slug → Engram~~ DONE 2026-07-04 (`com.engram.app`, Firebase re-registered)
 - Google Sign-In branding on `sign-in.tsx` screen
 - Download `google_apis` (rootable) AVD image for full emulator E2E isolation
   (`sdkmanager "system-images;android-34;google_apis;x86_64"`)

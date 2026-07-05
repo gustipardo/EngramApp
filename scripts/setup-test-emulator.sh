@@ -106,7 +106,7 @@ log "Granting READ_WRITE_DATABASE to our app..."
 # The permission must be granted before connectedAndroidTest runs so that
 # GrantPermissionRule can override it.  This grant covers the instrumented
 # test runner package.
-adb_serial shell pm grant com.anonymous.RealtimeApiOnMobile \
+adb_serial shell pm grant com.engram.app \
   "com.ichi2.anki.permission.READ_WRITE_DATABASE" 2>/dev/null \
   || log "Warning: pm grant failed (may be OK if app not installed yet)."
 

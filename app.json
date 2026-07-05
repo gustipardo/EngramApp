@@ -1,9 +1,9 @@
 {
   "expo": {
     "name": "Engram",
-    "slug": "RealtimeApiOnMobile",
+    "slug": "engram",
     "version": "1.0.0",
-    "scheme": "apixankionmobile",
+    "scheme": "engram",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -38,7 +38,7 @@
         "android.permission.BLUETOOTH",
         "com.android.vending.BILLING"
       ],
-      "package": "com.anonymous.RealtimeApiOnMobile"
+      "package": "com.engram.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -46,6 +46,7 @@
     "plugins": [
       "expo-router",
       "./modules/expo-foreground-audio/withForegroundAudioService",
+      "./plugins/withReleaseSigning",
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
       "@react-native-google-signin/google-signin"

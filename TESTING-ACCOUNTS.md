@@ -35,8 +35,8 @@ first login.
 Fresh-install test recipe (per `.claude/context/06-status.md`):
 
 ```bash
-adb -s <serial> shell pm clear com.anonymous.RealtimeApiOnMobile
-adb -s <serial> shell pm reset-permissions com.anonymous.RealtimeApiOnMobile
+adb -s <serial> shell pm clear com.engram.app
+adb -s <serial> shell pm reset-permissions com.engram.app
 # open app → AnkiDroid permission → deck → sign in with the target account
 ```
 
